@@ -1,21 +1,24 @@
 # Default parameters for Depth Anything 3 ROS2 node
+# OPTIMIZED CONFIGURATION - Phase 1: Config Tuning
+# Branch: opt/phase1-config-tuning
+# Target: Measure model change impact (DA3-BASE → DA3-SMALL)
 
 depth_anything_3:
   ros__parameters:
     # Model configuration
-    model_name: "depth-anything/DA3-BASE"  # HuggingFace model ID or local path
+    model_name: "depth-anything/DA3-SMALL" # Changed from DA3-BASE for faster inference
     device: "cuda"                          # Inference device: cuda or cpu
     cache_dir: ""                           # Model cache directory (empty for default)
 
     # Image processing
-    inference_height: 518                   # Height for inference
-    inference_width: 518                    # Width for inference
+    inference_height: 518                   # Kept same as baseline for comparison
+    inference_width: 518                    # Kept same as baseline for comparison
     input_encoding: "bgr8"                  # Expected input encoding (bgr8/rgb8)
 
     # Output configuration
     normalize_depth: true                   # Normalize depth to [0, 1] range
     publish_colored: true                   # Publish colorized depth visualization
-    publish_confidence: true                # Publish confidence map
+    publish_confidence: false               # DISABLED: expensive computation not used
     colormap: "turbo"                       # Colormap: turbo, viridis, plasma, magma, jet
 
     # Performance
@@ -23,4 +26,4 @@ depth_anything_3:
     processing_threads: 1                   # Number of processing threads
 
     # Logging
-    log_inference_time: false               # Log per-frame inference time
+    log_inference_time: true                # ENABLED: monitor performance improvements
