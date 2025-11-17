@@ -54,3 +54,37 @@ huggingface/
 
 # Logs
 *.log
+
+# Secrets and credentials
+.env
+.env.*
+*.key
+*.pem
+*secret*
+*credential*
+*password*
+config/*secret*
+config/*credential*
+
+# TensorRT optimization files
+*.engine
+*.plan
+*.trt
+*.tensorrt
+optimization_results/
+tensorrt_models/
+
+# Benchmark and profiling results
+benchmark_results/
+profiling_results/
+*.prof
+*.nvprof
+
+# Temporary optimization files
+*.tmp
+*.temp
+optimization_temp/
+
+# CHANGELOG (generated)
+CHANGELOG.md
+docs/claude.md
