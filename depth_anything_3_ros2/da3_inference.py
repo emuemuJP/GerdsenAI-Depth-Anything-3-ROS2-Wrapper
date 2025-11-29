@@ -167,12 +167,12 @@ class DA3InferenceWrapper:
             image = image.astype(np.uint8)
 
         try:
-            # Convert numpy array to PIL Image for DA3 API
-            pil_image = Image.fromarray(image)
-
+            # DA3 API accepts NumPy arrays directly - no PIL conversion needed
+            # This reduces CPU-GPU transfer overhead
+            
             # Run inference
             with torch.no_grad():
-                prediction = self._model.inference([pil_image])
+                prediction = self._model.inference([image])
 
             # Extract results
             result = {

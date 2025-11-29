@@ -284,16 +284,13 @@ class DA3InferenceOptimized:
         return_camera_params: bool
     ) -> Dict[str, np.ndarray]:
         """Run PyTorch inference."""
-        from PIL import Image
-
-        # Convert tensor back to PIL for DA3 API
-        # TODO: Modify DA3 to accept tensors directly
+        # Convert tensor to NumPy array (DA3 API accepts NumPy arrays directly)
+        # This eliminates the CPU bottleneck from PIL conversion
         img_numpy = (img_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-        pil_image = Image.fromarray(img_numpy)
 
-        # Run inference
+        # Run inference with NumPy array (no PIL conversion needed!)
         with torch.cuda.amp.autocast(enabled=(self.device == 'cuda')):
-            prediction = self._model.inference([pil_image])
+            prediction = self._model.inference([img_numpy])
 
         # Validate prediction
         if prediction is None:

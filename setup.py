@@ -1,10 +1,33 @@
 """Setup script for depth_anything_3_ros2 package."""
 
 from setuptools import setup
+from setuptools.command.install import install
 import os
 from glob import glob
 
 package_name = 'depth_anything_3_ros2'
+
+
+class PostInstallCommand(install):
+    """Post-installation command to create lib/<package_name> directory."""
+
+    def run(self):
+        install.run(self)
+        # Create lib/<package_name> directory for ROS2 launch compatibility
+        lib_dir = os.path.join(self.install_lib, '..', '..', '..', 'lib', package_name)
+        bin_dir = os.path.join(self.install_lib, '..', '..', '..', 'bin')
+
+        try:
+            os.makedirs(lib_dir, exist_ok=True)
+            # Create symlinks to executables
+            for executable in ['depth_anything_3_node', 'depth_anything_3_node_optimized']:
+                src = os.path.join(bin_dir, executable)
+                dst = os.path.join(lib_dir, executable)
+                if os.path.exists(src) and not os.path.exists(dst):
+                    os.symlink(os.path.relpath(src, lib_dir), dst)
+        except Exception as e:
+            print(f"Warning: Could not create lib/{package_name} symlinks: {e}")
+
 
 setup(
     name=package_name,
@@ -40,5 +63,8 @@ setup(
             'depth_anything_3_node = depth_anything_3_ros2.depth_anything_3_node:main',
             'depth_anything_3_node_optimized = depth_anything_3_ros2.depth_anything_3_node_optimized:main',
         ],
+    },
+    cmdclass={
+        'install': PostInstallCommand,
     },
 )
