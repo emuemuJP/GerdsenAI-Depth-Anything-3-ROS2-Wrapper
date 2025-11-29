@@ -1,0 +1,46 @@
+# Platform Configuration: NVIDIA Jetson Orin Nano
+# Optimized for efficiency on limited hardware
+
+platform:
+  name: "orin_nano"
+  description: "NVIDIA Jetson Orin Nano (8GB)"
+  gpu_memory_gb: 8
+  cuda_cores: 1024
+
+# Model Configuration
+model:
+  name: "depth-anything/DA3-SMALL"  # Fastest model
+  backend: "tensorrt_int8"           # Maximum speed
+  
+# Input/Output Resolution
+resolution:
+  model_input_height: 384            # Reduced for speed
+  model_input_width: 384
+  output_height: 720                 # 720p output
+  output_width: 1280
+
+# GPU Optimization
+gpu:
+  enable_upsampling: true
+  upsample_mode: "bilinear"          # Fast upsampling
+  use_cuda_streams: false
+
+# Output Configuration
+output:
+  normalize_depth: true
+  publish_colored: true
+  publish_confidence: true
+  colormap: "turbo"
+  async_colorization: true
+  check_subscribers: true
+
+# Performance Tuning
+performance:
+  queue_size: 1
+  log_inference_time: true
+
+# Expected Performance
+expected:
+  fps: 25
+  latency_ms: 40
+  gpu_memory_mb: 2000

@@ -1,0 +1,46 @@
+# Platform Configuration: NVIDIA Jetson Xavier NX
+# Balanced configuration for mid-range performance
+
+platform:
+  name: "xavier_nx"
+  description: "NVIDIA Jetson Xavier NX (16GB)"
+  gpu_memory_gb: 16
+  cuda_cores: 384
+
+# Model Configuration
+model:
+  name: "depth-anything/DA3-SMALL"  # Good balance
+  backend: "tensorrt_fp16"           # FP16 for quality
+  
+# Input/Output Resolution
+resolution:
+  model_input_height: 384
+  model_input_width: 384
+  output_height: 1080
+  output_width: 1920
+
+# GPU Optimization
+gpu:
+  enable_upsampling: true
+  upsample_mode: "bilinear"
+  use_cuda_streams: false
+
+# Output Configuration
+output:
+  normalize_depth: true
+  publish_colored: true
+  publish_confidence: true
+  colormap: "turbo"
+  async_colorization: true
+  check_subscribers: true
+
+# Performance Tuning
+performance:
+  queue_size: 1
+  log_inference_time: true
+
+# Expected Performance
+expected:
+  fps: 20
+  latency_ms: 50
+  gpu_memory_mb: 2500

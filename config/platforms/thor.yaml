@@ -1,0 +1,46 @@
+# Platform Configuration: NVIDIA Jetson Thor
+# Optimized for next-gen performance
+
+platform:
+  name: "thor"
+  description: "NVIDIA Jetson Thor"
+  gpu_memory_gb: 64  # Estimated
+  cuda_cores: 4096   # Estimated
+
+# Model Configuration
+model:
+  name: "depth-anything/DA3-LARGE"   # Maximum quality
+  backend: "tensorrt_fp16"
+  
+# Input/Output Resolution
+resolution:
+  model_input_height: 640            # Higher resolution
+  model_input_width: 640
+  output_height: 2160                # 4K output capability
+  output_width: 3840
+
+# GPU Optimization
+gpu:
+  enable_upsampling: true
+  upsample_mode: "bicubic"
+  use_cuda_streams: true             # Thor can handle it
+
+# Output Configuration
+output:
+  normalize_depth: true
+  publish_colored: true
+  publish_confidence: true
+  colormap: "turbo"
+  async_colorization: true
+  check_subscribers: true
+
+# Performance Tuning
+performance:
+  queue_size: 1
+  log_inference_time: true
+
+# Expected Performance (Estimated)
+expected:
+  fps: 60
+  latency_ms: 16
+  gpu_memory_mb: 8000

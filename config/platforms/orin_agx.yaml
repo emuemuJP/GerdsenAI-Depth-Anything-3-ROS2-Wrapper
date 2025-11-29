@@ -1,0 +1,46 @@
+# Platform Configuration: NVIDIA Jetson Orin AGX 64GB
+# Optimized for maximum quality while maintaining >30 FPS
+
+platform:
+  name: "orin_agx"
+  description: "NVIDIA Jetson Orin AGX 64GB"
+  gpu_memory_gb: 64
+  cuda_cores: 2048
+
+# Model Configuration
+model:
+  name: "depth-anything/DA3-BASE"  # Best quality/speed trade-off
+  backend: "tensorrt_fp16"          # FP16 for minimal quality loss
+  
+# Input/Output Resolution
+resolution:
+  model_input_height: 518           # Maintain high quality
+  model_input_width: 518
+  output_height: 1080               # Full HD output
+  output_width: 1920
+
+# GPU Optimization
+gpu:
+  enable_upsampling: true
+  upsample_mode: "bicubic"          # Higher quality upsampling
+  use_cuda_streams: false           # Disable for stability (can enable for 5-10% speedup)
+
+# Output Configuration
+output:
+  normalize_depth: true
+  publish_colored: true
+  publish_confidence: true
+  colormap: "turbo"
+  async_colorization: true          # Off critical path
+  check_subscribers: true           # Skip work if no subscribers
+
+# Performance Tuning
+performance:
+  queue_size: 1                     # Always process latest frame
+  log_inference_time: true          # Monitor FPS
+
+# Expected Performance
+expected:
+  fps: 32
+  latency_ms: 31
+  gpu_memory_mb: 4500
