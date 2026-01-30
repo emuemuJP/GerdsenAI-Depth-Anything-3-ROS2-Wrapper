@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-TensorRT Optimization for Jetson Platforms
+TensorRT Optimization for Jetson Platforms (Legacy torch2trt approach)
 
-Optimizes Depth Anything 3 models for NVIDIA Jetson devices using TensorRT.
-Provides significant inference speedup on Jetson Orin, Xavier, and Nano.
+NOTE: This script uses torch2trt which may fail due to Issue #22 (ONNX export failure).
+For production use, prefer the pre-exported ONNX approach:
+
+    python scripts/build_tensorrt_engine.py --auto
+
+This builds TensorRT engines from pre-exported ONNX models, bypassing the export issue.
+
+This legacy script optimizes Depth Anything 3 models using torch2trt.
+May not work with all model variants due to DINOv2 tracing issues.
 
 Requirements:
     - NVIDIA JetPack 6.x (includes TensorRT)
@@ -11,7 +18,7 @@ Requirements:
     - PyTorch with CUDA support
 
 Usage:
-    # Optimize DA3-BASE model
+    # Optimize DA3-BASE model (may fail - use build_tensorrt_engine.py instead)
     python3 optimize_tensorrt.py \
         --model depth-anything/DA3-BASE \
         --output da3_base_trt.pth \
@@ -30,6 +37,9 @@ Usage:
         --output da3_base_trt.pth \
         --benchmark \
         --iterations 100
+
+RECOMMENDED: Use the new ONNX-based approach instead:
+    python scripts/build_tensorrt_engine.py --model da3-small --precision fp16
 """
 
 import argparse
