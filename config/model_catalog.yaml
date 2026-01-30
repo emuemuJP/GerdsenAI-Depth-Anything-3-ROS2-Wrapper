@@ -1,6 +1,10 @@
 # Depth Anything 3 Model Catalog
 # This file defines available models with their specifications and platform recommendations.
 # Used by setup_models.py for interactive model selection.
+#
+# TensorRT Support:
+# Models with onnx_hf_repo can be converted to TensorRT using build_tensorrt_engine.py.
+# This bypasses Issue #22 (ONNX export failure) by using pre-exported ONNX models.
 
 models:
   DA3-SMALL:
@@ -12,6 +16,14 @@ models:
     license_commercial: true
     description: "Lightweight model for resource-constrained devices"
     output_type: "relative"
+    # TensorRT support via pre-exported ONNX (bypasses Issue #22)
+    onnx_hf_repo: "onnx-community/depth-anything-v3-small"
+    onnx_file: "onnx/model.onnx"
+    tensorrt:
+      supported_precisions: ["fp16", "int8"]
+      recommended_precision: "fp16"
+      supported_resolutions: [308, 518, 728]
+      engine_naming: "da3-small_{precision}_{resolution}x{resolution}_{platform}.engine"
     recommended_for:
       - "ORIN_NANO_4GB"
       - "ORIN_NANO_8GB"
@@ -75,6 +87,14 @@ models:
     license_commercial: false
     description: "Balanced performance and accuracy"
     output_type: "relative"
+    # TensorRT support via pre-exported ONNX (bypasses Issue #22)
+    onnx_hf_repo: "onnx-community/depth-anything-v3-base"
+    onnx_file: "onnx/model.onnx"
+    tensorrt:
+      supported_precisions: ["fp16", "int8"]
+      recommended_precision: "fp16"
+      supported_resolutions: [308, 518, 728]
+      engine_naming: "da3-base_{precision}_{resolution}x{resolution}_{platform}.engine"
     recommended_for:
       - "ORIN_NX_16GB"
     compatible_with:
@@ -119,6 +139,14 @@ models:
     license_commercial: false
     description: "High accuracy model - version 1.1 fixes training bugs"
     output_type: "relative"
+    # TensorRT support via pre-exported ONNX (bypasses Issue #22)
+    onnx_hf_repo: "onnx-community/depth-anything-v3-large"
+    onnx_file: "onnx/model.onnx"
+    tensorrt:
+      supported_precisions: ["fp16", "int8"]
+      recommended_precision: "fp16"
+      supported_resolutions: [308, 518, 728, 1024]
+      engine_naming: "da3-large_{precision}_{resolution}x{resolution}_{platform}.engine"
     recommended_for:
       - "AGX_ORIN_32GB"
       - "AGX_ORIN_64GB"
@@ -347,3 +375,84 @@ licenses:
     commercial_use: false
     url: "https://creativecommons.org/licenses/by-nc/4.0/"
     summary: "Non-commercial use only. Contact ByteDance for commercial licensing."
+
+# TensorRT Configuration
+# Platform-specific TensorRT optimization settings for Jetson deployment
+tensorrt:
+  # Engine file storage location (relative to repo root)
+  engine_directory: "models/tensorrt"
+  onnx_directory: "models/onnx"
+
+  # Platform-specific configurations
+  platform_configs:
+    ORIN_NANO_4GB:
+      max_workspace_mb: 512
+      recommended_precision: "fp16"
+      recommended_resolution: 308
+      dla_enabled: false
+      expected_fps:
+        da3-small_fp16_308: 30
+        da3-small_int8_308: 42
+
+    ORIN_NANO_8GB:
+      max_workspace_mb: 1024
+      recommended_precision: "fp16"
+      recommended_resolution: 308
+      dla_enabled: false
+      expected_fps:
+        da3-small_fp16_308: 42
+        da3-small_int8_308: 55
+
+    ORIN_NX_8GB:
+      max_workspace_mb: 1024
+      recommended_precision: "fp16"
+      recommended_resolution: 308
+      dla_enabled: true
+      expected_fps:
+        da3-small_fp16_308: 42
+        da3-small_fp16_518: 20
+
+    ORIN_NX_16GB:
+      max_workspace_mb: 2048
+      recommended_precision: "fp16"
+      recommended_resolution: 518
+      dla_enabled: true
+      expected_fps:
+        da3-small_fp16_518: 20
+        da3-base_fp16_518: 15
+
+    AGX_ORIN_32GB:
+      max_workspace_mb: 4096
+      recommended_precision: "fp16"
+      recommended_resolution: 518
+      dla_enabled: true
+      expected_fps:
+        da3-small_fp16_518: 50
+        da3-large_fp16_518: 50
+
+    AGX_ORIN_64GB:
+      max_workspace_mb: 8192
+      recommended_precision: "fp16"
+      recommended_resolution: 518
+      dla_enabled: true
+      expected_fps:
+        da3-small_fp16_518: 60
+        da3-large_fp16_518: 50
+        da3-large_fp16_1024: 30
+
+    X86_GPU:
+      max_workspace_mb: 4096
+      recommended_precision: "fp16"
+      recommended_resolution: 518
+      dla_enabled: false
+      expected_fps:
+        da3-small_fp16_518: 100
+        da3-large_fp16_518: 60
+
+  # Build command template (for reference)
+  build_command: |
+    python scripts/build_tensorrt_engine.py \
+      --model {model} \
+      --precision {precision} \
+      --resolution {resolution} \
+      --output-dir models/
