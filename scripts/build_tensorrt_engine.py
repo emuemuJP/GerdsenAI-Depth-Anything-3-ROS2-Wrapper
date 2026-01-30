@@ -419,11 +419,14 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
     precision = platform_config["recommended_precision"]
     resolution = platform_config["recommended_resolution"]
     workspace = platform_config["max_workspace_mb"]
+    dla_enabled = platform_config.get("dla_enabled", False)
 
     print(f"\nRecommended settings for {platform}:")
     print(f"  Precision: {precision}")
     print(f"  Resolution: {resolution}x{resolution}")
     print(f"  Workspace: {workspace} MB")
+    if dla_enabled:
+        print(f"  DLA: Enabled (will use DLA core 0 for power efficiency)")
 
     # Use DA3-Small as default (best balance for Jetson)
     model_key = "da3-small"
@@ -436,12 +439,16 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
     engine_name = get_engine_filename(model_key, precision, resolution, platform)
     engine_path = output_dir / "tensorrt" / engine_name
 
+    # Use DLA core 0 if enabled for this platform
+    dla_core = 0 if dla_enabled else None
+
     success = build_tensorrt_engine(
         onnx_path=onnx_path,
         output_path=engine_path,
         precision=precision,
         resolution=resolution,
         max_workspace_mb=workspace,
+        dla_core=dla_core,
         verbose=verbose,
     )
 

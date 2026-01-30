@@ -456,7 +456,7 @@ def get_platform_recommendations(platform: str) -> Dict[str, Any]:
         },
         PLATFORM_AGX_ORIN_64GB: {
             "recommended_model": "DA3-LARGE-1.1",
-            "recommended_resolution": (1024, 1024),
+            "recommended_resolution": (1022, 1022),
             "max_model": "DA3-GIANT-1.1",
             "expected_fps": 30,
             "vram_budget_mb": 16000,
@@ -535,7 +535,9 @@ def check_model_compatibility(
     recommendations = get_platform_recommendations(platform)
 
     # Use override VRAM or platform budget
-    available_vram = vram_mb if vram_mb is not None else recommendations["vram_budget_mb"]
+    available_vram = (
+        vram_mb if vram_mb is not None else recommendations["vram_budget_mb"]
+    )
 
     if required_vram > available_vram:
         return (
