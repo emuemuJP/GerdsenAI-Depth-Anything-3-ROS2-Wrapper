@@ -239,19 +239,20 @@ Watch the console output for performance metrics (logged every 5 seconds):
 
 ### Model Selection
 
-| Model | Speed | Quality | FPS (TRT INT8) |
-|-------|-------|---------|----------------|
-| DA3-SMALL | Fastest | Good | 35-40 FPS |
-| DA3-BASE | Medium | Better | 28-32 FPS |
-| DA3-LARGE | Slow | Best | 18-22 FPS |
+| Model | Speed | Quality | FPS (TRT FP16 @ 518) |
+|-------|-------|---------|----------------------|
+| DA3-SMALL | Fastest | Good | 30-35 FPS |
+| DA3-BASE | Medium | Better | 25-30 FPS |
+| DA3-LARGE | Slow | Best | 15-20 FPS |
 
 ### Input Resolution Trade-offs
 
-| Resolution | Inference Time (TRT INT8) | Quality | Recommendation |
-|------------|---------------------------|---------|----------------|
-| 384x384 | ~18ms | Very Good | **Recommended for >30 FPS** |
-| 518x518 | ~30ms | Excellent | Use if quality is critical |
-| 640x640 | ~45ms | Best | Too slow for real-time |
+| Resolution | Platform | Inference Time (TRT FP16) | Recommendation |
+|------------|----------|---------------------------|----------------|
+| 308x308 | Orin Nano 4GB/8GB | ~15ms | **Recommended for memory-constrained** |
+| 308x308 | Orin NX 8GB | ~12ms | Good balance |
+| 518x518 | Orin NX 16GB | ~25ms | **Recommended for 16GB+** |
+| 518x518 | AGX Orin 32GB/64GB | ~20ms | **Recommended for AGX** |
 
 ### Upsampling Mode
 
@@ -293,18 +294,21 @@ watch -n 1 nvidia-smi
 # If low, check for CPU bottlenecks
 ```
 
-### Issue: TensorRT conversion fails
+### Issue: TensorRT engine build fails
 
 ```bash
-# Check torch2trt installation
-pip3 show torch2trt
+# Check TensorRT and pycuda installation
+python3 -c "import tensorrt; print(f'TensorRT {tensorrt.__version__}')"
+python3 -c "import pycuda.driver; print('pycuda OK')"
 
-# Reinstall if needed
-pip3 uninstall torch2trt
-pip3 install torch2trt
+# Verify trtexec is available
+which trtexec || ls /usr/src/tensorrt/bin/trtexec
 
 # Verify TensorRT libraries
 ls /usr/lib/aarch64-linux-gnu/libnvinfer*
+
+# Try building with verbose output
+python3 scripts/build_tensorrt_engine.py --auto --verbose
 ```
 
 ### Issue: Out of memory
