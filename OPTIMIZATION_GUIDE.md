@@ -358,36 +358,57 @@ Tested on Jetson Orin AGX 64GB with Anker PowerConf C200:
 | Configuration | Model Input | Backend | FPS | Total Time | Quality |
 |--------------|-------------|---------|-----|------------|---------|
 | Baseline | 518x518 | PyTorch | 6 FPS | 167ms | Excellent |
-| Optimized FP16 | 384x384 | PyTorch FP16 | 26 FPS | 38ms | Very Good |
-| **Recommended** | 384x384 | TensorRT INT8 | **34 FPS** | **29ms** | Very Good |
-| Maximum Quality | 518x518 | TensorRT FP16 | 22 FPS | 45ms | Excellent |
+| Optimized FP16 | 518x518 | PyTorch FP16 | 22 FPS | 45ms | Very Good |
+| **Recommended** | 518x518 | TensorRT FP16 | **32 FPS** | **31ms** | Excellent |
+| Memory Optimized | 308x308 | TensorRT FP16 | 40 FPS | 25ms | Good |
 
 All configurations produce 1080p depth + confidence outputs.
 
+### Platform-Specific Recommendations
+
+| Platform | Model | Resolution | Precision | Expected FPS |
+|----------|-------|------------|-----------|--------------|
+| Orin Nano 4GB | da3-small | 308 | FP16 | 30 |
+| Orin Nano 8GB | da3-small | 308 | FP16 | 35 |
+| Orin NX 8GB | da3-small | 308 | FP16 | 40 |
+| Orin NX 16GB | da3-small | 518 | FP16 | 45 |
+| AGX Orin 32GB | da3-base | 518 | FP16 | 50 |
+| AGX Orin 64GB | da3-large | 518 | FP16 | 50+ |
+
 ## Quality Comparison
 
-**INT8 vs FP16 Quantization:**
-- Absolute depth error: +3-5% (INT8 vs FP16)
-- Edge sharpness: Minimal difference
-- Overall quality: Excellent for most applications
-- Recommendation: Use INT8 unless absolute maximum accuracy required
+**FP16 vs INT8 Quantization:**
+- FP16: No accuracy loss, recommended default
+- INT8: ~3-5% accuracy reduction, requires calibration dataset
+- Recommendation: Use FP16 unless maximum speed is critical and you have calibration data
 
-**384x384 vs 518x518 Input:**
-- When upsampled to 1080p, visual difference is minimal
-- 518x518 slightly better for fine details
-- 384x384 recommended for real-time applications
+**308x308 vs 518x518 Input:**
+- When upsampled to 1080p, both produce good results
+- 518x518 better for fine details and edges
+- 308x308 recommended for memory-constrained devices (Orin Nano)
 
 ## Summary
 
-To achieve >30 FPS with 1080p depth + confidence on Jetson Orin AGX:
+To achieve >30 FPS with 1080p depth + confidence on Jetson:
 
-1. Use DA3-SMALL model
-2. Convert to TensorRT INT8
-3. Use 384x384 model input
-4. Enable GPU upsampling to 1080p
-5. Enable async colorization
-6. Configure camera for 1080p MJPEG
+**Quick Start (Docker):**
+```bash
+# Build Jetson image
+docker compose build depth-anything-3-jetson
 
-Expected performance: **32-36 FPS** with excellent depth quality.
+# Run with auto TensorRT engine building
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
+
+**Manual Setup:**
+1. Run `python3 scripts/build_tensorrt_engine.py --auto` (auto-detects platform)
+2. Launch with `backend:=tensorrt_native`
+3. Configure camera for 1080p MJPEG
+
+**Platform-specific settings are automatically selected:**
+- Orin Nano/NX 8GB: 308x308 FP16
+- Orin NX 16GB / AGX Orin: 518x518 FP16
+
+Expected performance: **30-50 FPS** depending on platform.
 
 For questions or issues, please open a GitHub issue.
