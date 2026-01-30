@@ -34,7 +34,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 # Add parent directory to path for imports
 script_dir = Path(__file__).parent
@@ -270,6 +270,8 @@ def download_onnx_model(model_key: str, output_dir: Path) -> Path:
 
 def find_trtexec() -> Optional[str]:
     """Find the trtexec binary."""
+    import shutil
+
     # Common locations for trtexec
     search_paths = [
         "/usr/src/tensorrt/bin/trtexec",
@@ -278,8 +280,6 @@ def find_trtexec() -> Optional[str]:
     ]
 
     # Check PATH first
-    import shutil
-
     trtexec = shutil.which("trtexec")
     if trtexec:
         return trtexec
@@ -323,7 +323,7 @@ def build_tensorrt_engine(
         print("Ensure JetPack 6.x is installed correctly.")
         return False
 
-    print(f"\nBuilding TensorRT engine:")
+    print("\nBuilding TensorRT engine:")
     print(f"  ONNX model: {onnx_path}")
     print(f"  Output: {output_path}")
     print(f"  Precision: {precision}")
@@ -366,7 +366,7 @@ def build_tensorrt_engine(
     if verbose:
         cmd.append("--verbose")
 
-    print(f"\nRunning trtexec...")
+    print("\nRunning trtexec...")
     print(f"  Command: {' '.join(cmd)}")
 
     try:
@@ -467,7 +467,8 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
         "DA3-SMALL": "da3-small",
         "DA3-BASE": "da3-base",
         "DA3-LARGE-1.1": "da3-large",
-        "DA3-GIANT-1.1": "da3-large",  # Fallback to da3-large (giant not available as ONNX)
+        # Fallback to da3-large (giant not available as ONNX)
+        "DA3-GIANT-1.1": "da3-large",
     }
 
     # Get platform-specific recommendation
@@ -480,7 +481,7 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
         print(f"  Model: {recommended_model} (platform-recommended)")
     except ImportError:
         model_key = "da3-small"
-        print(f"  Model: da3-small (default - jetson_detector not available)")
+        print("  Model: da3-small (default - jetson_detector not available)")
 
     # Download ONNX model
     onnx_dir = output_dir / "onnx"
@@ -510,9 +511,10 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
         print(f"\nEngine saved to: {engine_path}")
         print("\nTo use in ROS2:")
         print(
-            f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\"
+            "  ros2 launch depth_anything_3_ros2 "
+            f"depth_anything_3_optimized.launch.py \\"
         )
-        print(f"    backend:=tensorrt_native \\")
+        print("    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
 
     return success
@@ -664,9 +666,10 @@ def main():
         print(f"\nEngine saved to: {engine_path}")
         print("\nTo use in ROS2:")
         print(
-            f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\"
+            "  ros2 launch depth_anything_3_ros2 "
+            f"depth_anything_3_optimized.launch.py \\"
         )
-        print(f"    backend:=tensorrt_native \\")
+        print("    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
 
     sys.exit(0 if success else 1)
