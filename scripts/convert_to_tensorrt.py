@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Convert Depth Anything 3 models to TensorRT for high-performance inference.
+Convert Depth Anything 3 models to TensorRT (Legacy torch2trt approach)
 
-This script converts DA3 models to TensorRT INT8 or FP16 for optimal performance
-on NVIDIA Jetson platforms. Expected speedup: 3-4x for INT8, 2-3x for FP16.
+NOTE: This script uses torch2trt which may fail due to Issue #22 (ONNX export failure).
+For production use, prefer the pre-exported ONNX approach:
 
-Requirements:
+    python scripts/build_tensorrt_engine.py --auto
+
+This builds TensorRT engines from pre-exported ONNX models, bypassing the export issue.
+
+Legacy Requirements:
     - torch2trt: pip install torch2trt
     - NVIDIA JetPack 6.x (includes TensorRT)
 
-Usage:
+Legacy Usage (may fail - use build_tensorrt_engine.py instead):
     # Convert DA3-SMALL to INT8 (fastest)
     python3 convert_to_tensorrt.py \
         --model depth-anything/DA3-SMALL \
@@ -24,13 +28,8 @@ Usage:
         --precision fp16 \
         --input-size 518 518
 
-    # Benchmark converted model
-    python3 convert_to_tensorrt.py \
-        --model depth-anything/DA3-SMALL \
-        --output models/da3_small_int8.pth \
-        --precision int8 \
-        --benchmark \
-        --iterations 100
+RECOMMENDED: Use the new ONNX-based approach instead:
+    python scripts/build_tensorrt_engine.py --model da3-small --precision fp16
 """
 
 import argparse
