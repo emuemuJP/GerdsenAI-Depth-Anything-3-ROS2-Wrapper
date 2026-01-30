@@ -8,12 +8,23 @@ demonstrating camera-agnostic design.
 import unittest
 from unittest.mock import patch, MagicMock
 import numpy as np
+import pytest
 
-import rclpy
-from sensor_msgs.msg import Image
-from std_msgs.msg import Header
+# Conditional ROS2 imports - allows collection without ROS2 installed
+try:
+    import rclpy
+    from sensor_msgs.msg import Image
+    from std_msgs.msg import Header
+
+    ROS2_AVAILABLE = True
+except ImportError:
+    ROS2_AVAILABLE = False
+    rclpy = None
+    Image = None
+    Header = None
 
 
+@pytest.mark.skipif(not ROS2_AVAILABLE, reason="ROS2 not available")
 class TestGenericCamera(unittest.TestCase):
     """Test cases for camera-agnostic functionality."""
 
