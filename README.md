@@ -1,4 +1,4 @@
-# WORK IN PROGRESS LOOKING FOR CONTRIBUTERS :)
+# WORK IN PROGRESS LOOKING FOR CONTRIBUTERS
 
 # Depth Anything 3 ROS2 Wrapper
 
@@ -133,10 +133,15 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
 - [Installation](#installation)
   - [Native Installation](#installation)
   - [Docker Installation](#docker-deployment)
+- [Hardware Detection and Model Setup](#hardware-detection-and-model-setup)
+  - [Interactive Setup Script](#interactive-setup-script)
+  - [Platform Recommendations](#platform-recommendations)
+  - [Model Licensing](#model-licensing)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Usage Examples](#usage-examples)
 - [Docker Deployment](#docker-deployment)
+  - [Docker Environment Variables](#docker-environment-variables)
 - [Example Images and Benchmarks](#example-images-and-benchmarks)
 - [Performance](#performance)
 - [Documentation](#documentation)
@@ -238,9 +243,38 @@ colcon test --packages-select depth_anything_3_ros2
 colcon test-result --verbose
 ```
 
-### Step 5: Pre-Download Models (Optional but Recommended)
+### Step 5: Model Setup (Recommended)
 
-Pre-download models to avoid delays on first run. **This step is REQUIRED if deploying to offline robots.**
+Use the interactive setup script to detect your hardware and download the optimal model:
+
+```bash
+# Interactive setup (recommended) - detects hardware and recommends models
+python scripts/setup_models.py
+
+# Show detected hardware information only
+python scripts/setup_models.py --detect
+
+# List all available models with compatibility info
+python scripts/setup_models.py --list-models
+
+# Non-interactive installation of a specific model
+python scripts/setup_models.py --model DA3-SMALL --no-download
+
+# Override detected VRAM (useful for shared GPU systems)
+python scripts/setup_models.py --vram 8192
+```
+
+The setup script will:
+1. Detect your hardware platform (Jetson module, GPU, RAM)
+2. Show compatible models with recommendations
+3. Download selected model(s) from Hugging Face
+4. Generate an optimized configuration file
+
+See [Hardware Detection and Model Setup](#hardware-detection-and-model-setup) for detailed platform recommendations.
+
+**Manual Download (Alternative):**
+
+If you prefer to download models manually without the setup script:
 
 ```bash
 # Download a specific model (requires internet connection)
@@ -259,11 +293,103 @@ print('You can now run offline!')
 # tar -xzf da3_models.tar.gz -C ~/.cache/huggingface/
 ```
 
-**Alternative models:**
-- For faster inference: Replace `DA3-BASE` with `DA3-SMALL`
-- For best quality: Replace `DA3-BASE` with `DA3-LARGE`
-
 See [Dependencies and Model Downloads](#important-dependencies-and-model-downloads) for complete offline deployment instructions.
+
+---
+
+## Hardware Detection and Model Setup
+
+This package includes an interactive setup system that detects your hardware and recommends optimal model configurations.
+
+### Interactive Setup Script
+
+The `setup_models.py` script provides guided model selection based on your hardware:
+
+```bash
+cd ~/ros2_ws/src/GerdsenAI-Depth-Anything-3-ROS2-Wrapper
+
+# Run interactive setup
+python scripts/setup_models.py
+```
+
+Example output:
+```
+============================================================
+     Depth Anything 3 - Model Setup
+============================================================
+
+Detected Hardware:
+  Platform: Jetson Orin NX 16GB
+  RAM: 16.0 GB
+  GPU Memory: 16.0GB
+  GPU: NVIDIA Tegra Orin (nvgpu)
+  JetPack: 6.0
+  L4T: 36.3.0
+  CUDA Available: Yes
+
+Available Models:
+------------------------------------------------------------
+  [*] DA3-SMALL           (30M, 1.0GB)
+      License: Apache-2.0
+      Status: Compatible
+      Lightweight model for resource-constrained devices
+
+  [*] DA3-BASE            (100M, 2.0GB)
+      License: CC-BY-NC-4.0
+      Status: RECOMMENDED for your hardware
+      Balanced performance and accuracy
+...
+```
+
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--detect` | Show hardware detection info only |
+| `--list-models` | List all available models with compatibility |
+| `--model MODEL` | Non-interactive install of specific model |
+| `--vram MB` | Override detected VRAM (useful for shared GPU) |
+| `--platform NAME` | Override detected platform |
+| `--no-download` | Skip downloading models (config only) |
+| `--no-config` | Skip generating config file |
+| `--all` | Show all models including incompatible ones |
+
+### Platform Recommendations
+
+The following table shows recommended models for each Jetson platform:
+
+| Platform | Recommended Model | Resolution | VRAM Usage |
+|----------|-------------------|------------|------------|
+| Orin Nano 4GB | DA3-SMALL | 308x308 | ~626MB |
+| Orin Nano 8GB | DA3-SMALL | 308x308 | ~626MB |
+| Orin NX 8GB | DA3-SMALL | 308x308 | ~626MB |
+| Orin NX 16GB | DA3-BASE | 518x518 | ~1.8GB |
+| AGX Orin 32GB | DA3-LARGE-1.1 | 518x518 | ~3.8GB |
+| AGX Orin 64GB | DA3-LARGE-1.1 | 1024x1024 | ~4.5GB |
+| Xavier NX | DA3-SMALL | 308x308 | ~626MB |
+| x86 with GPU | DA3-BASE or larger | 518x518+ | Varies |
+| CPU Only | DA3-SMALL | 308x308 | N/A |
+
+**Note**: Resolution must be divisible by 14 (ViT patch size). Common presets:
+- **Low**: 308x308 - Fastest, suitable for obstacle avoidance
+- **Medium**: 518x518 - Balanced speed and detail
+- **High**: 728x728 - More detail, slower inference
+- **Ultra**: 1024x1024 - Maximum detail, requires high-end GPU
+
+### Model Licensing
+
+Depth Anything 3 models have different licenses that affect commercial use:
+
+| Model | License | Commercial Use |
+|-------|---------|----------------|
+| DA3-SMALL | Apache-2.0 | Yes |
+| DA3-BASE | CC-BY-NC-4.0 | No (contact ByteDance) |
+| DA3-LARGE-1.1 | CC-BY-NC-4.0 | No (contact ByteDance) |
+| DA3-GIANT-1.1 | CC-BY-NC-4.0 | No (contact ByteDance) |
+| DA3METRIC-LARGE | CC-BY-NC-4.0 | No (contact ByteDance) |
+| DA3MONO-LARGE | CC-BY-NC-4.0 | No (contact ByteDance) |
+
+**Important**: Only `DA3-SMALL` is licensed for commercial use under Apache-2.0. All other models use CC-BY-NC-4.0 (non-commercial). For commercial applications with larger models, contact ByteDance for licensing.
 
 ---
 
@@ -538,6 +664,49 @@ The docker-compose.yml includes:
 - `depth-anything-3-gpu`: GPU-accelerated deployment
 - `depth-anything-3-dev`: Development environment
 - `depth-anything-3-usb-camera`: Standalone USB camera service
+
+### Docker Environment Variables
+
+Configure the container behavior using environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DA3_MODEL` | `depth-anything/DA3-BASE` | HuggingFace model ID to use |
+| `DA3_INFERENCE_HEIGHT` | `518` | Inference height (must be divisible by 14) |
+| `DA3_INFERENCE_WIDTH` | `518` | Inference width (must be divisible by 14) |
+| `DA3_VRAM_LIMIT_MB` | (auto) | Override detected VRAM for model selection |
+| `DA3_DEVICE` | `cuda` | Inference device (`cuda` or `cpu`) |
+
+Example usage:
+
+```bash
+# Run with specific model and resolution
+docker run -it --rm \
+    --runtime=nvidia \
+    --gpus all \
+    -e DA3_MODEL=depth-anything/DA3-SMALL \
+    -e DA3_INFERENCE_HEIGHT=308 \
+    -e DA3_INFERENCE_WIDTH=308 \
+    depth_anything_3_ros2:gpu
+
+# Override VRAM detection for shared GPU systems
+docker run -it --rm \
+    --runtime=nvidia \
+    --gpus all \
+    -e DA3_VRAM_LIMIT_MB=4096 \
+    depth_anything_3_ros2:gpu
+```
+
+In docker-compose.yml:
+
+```yaml
+services:
+  depth-anything-3-gpu:
+    environment:
+      - DA3_MODEL=depth-anything/DA3-SMALL
+      - DA3_INFERENCE_HEIGHT=308
+      - DA3_INFERENCE_WIDTH=308
+```
 
 ### Docker Testing and Validation
 
