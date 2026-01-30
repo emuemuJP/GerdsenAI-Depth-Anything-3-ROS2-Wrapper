@@ -66,7 +66,7 @@ ONNX_MODELS = {
         "display_name": "Depth Anything 3 Large",
         "parameters": "350M",
         "default_resolution": 518,
-        "supported_resolutions": [308, 518, 728, 1024],
+        "supported_resolutions": [308, 518, 728, 1022],
     },
 }
 
@@ -121,6 +121,7 @@ def detect_platform() -> Dict:
     """Detect the current Jetson platform."""
     try:
         from depth_anything_3_ros2.jetson_detector import detect_platform
+
         return detect_platform()
     except ImportError:
         pass
@@ -177,9 +178,12 @@ def detect_platform() -> Dict:
     if platform_info["platform"] == "UNKNOWN":
         try:
             import torch
+
             if torch.cuda.is_available():
                 platform_info["platform"] = "X86_GPU"
-                platform_info["display_name"] = f"x86 GPU ({torch.cuda.get_device_name(0)})"
+                platform_info["display_name"] = (
+                    f"x86 GPU ({torch.cuda.get_device_name(0)})"
+                )
         except ImportError:
             pass
 
@@ -199,8 +203,7 @@ def download_onnx_model(model_key: str, output_dir: Path) -> Path:
     """
     if model_key not in ONNX_MODELS:
         raise ValueError(
-            f"Unknown model: {model_key}. "
-            f"Available: {list(ONNX_MODELS.keys())}"
+            f"Unknown model: {model_key}. " f"Available: {list(ONNX_MODELS.keys())}"
         )
 
     model_info = ONNX_MODELS[model_key]
@@ -244,6 +247,7 @@ def find_trtexec() -> Optional[str]:
 
     # Check PATH first
     import shutil
+
     trtexec = shutil.which("trtexec")
     if trtexec:
         return trtexec
@@ -318,10 +322,12 @@ def build_tensorrt_engine(
 
     # DLA support (Jetson specific)
     if dla_core is not None:
-        cmd.extend([
-            f"--useDLACore={dla_core}",
-            "--allowGPUFallback",
-        ])
+        cmd.extend(
+            [
+                f"--useDLACore={dla_core}",
+                "--allowGPUFallback",
+            ]
+        )
         print(f"  DLA Core: {dla_core}")
 
     # Verbose output
@@ -445,7 +451,9 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
         print("=" * 60)
         print(f"\nEngine saved to: {engine_path}")
         print("\nTo use in ROS2:")
-        print(f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\")
+        print(
+            f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\"
+        )
         print(f"    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
 
@@ -460,27 +468,31 @@ def main():
     )
 
     parser.add_argument(
-        "--model", "-m",
+        "--model",
+        "-m",
         type=str,
         choices=list(ONNX_MODELS.keys()),
         default="da3-small",
         help="Model to build (default: da3-small)",
     )
     parser.add_argument(
-        "--precision", "-p",
+        "--precision",
+        "-p",
         type=str,
         choices=["fp32", "fp16", "int8"],
         default="fp16",
         help="Precision mode (default: fp16)",
     )
     parser.add_argument(
-        "--resolution", "-r",
+        "--resolution",
+        "-r",
         type=int,
         default=None,
         help="Input resolution (default: model-specific)",
     )
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         type=str,
         default=str(repo_root / "models"),
         help="Output directory for models (default: ./models)",
@@ -508,7 +520,8 @@ def main():
         help="List available models",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Verbose output",
     )
@@ -572,9 +585,7 @@ def main():
     platform = platform_info.get("platform", "unknown")
 
     # Generate output filename
-    engine_name = get_engine_filename(
-        args.model, args.precision, resolution, platform
-    )
+    engine_name = get_engine_filename(args.model, args.precision, resolution, platform)
     engine_path = output_dir / "tensorrt" / engine_name
 
     # Build engine
@@ -594,7 +605,9 @@ def main():
         print("=" * 60)
         print(f"\nEngine saved to: {engine_path}")
         print("\nTo use in ROS2:")
-        print(f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\")
+        print(
+            f"  ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \\"
+        )
         print(f"    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
 

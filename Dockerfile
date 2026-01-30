@@ -110,9 +110,9 @@ RUN echo "=== Checking pre-installed OpenCV ===" && \
     OPENCV_VERSION=$(pkg-config --modversion opencv4) && \
     echo "Found OpenCV version: $OPENCV_VERSION" && \
     case "$OPENCV_VERSION" in \
-        4.8.*) echo "OpenCV 4.8.x detected - proceeding with source build of cv_bridge" ;; \
-        4.5.*) echo "WARNING: OpenCV 4.5.x detected - apt packages should work, but we'll build from source anyway" ;; \
-        *) echo "ERROR: Unexpected OpenCV version: $OPENCV_VERSION" && exit 1 ;; \
+    4.8.*) echo "OpenCV 4.8.x detected - proceeding with source build of cv_bridge" ;; \
+    4.5.*) echo "WARNING: OpenCV 4.5.x detected - apt packages should work, but we'll build from source anyway" ;; \
+    *) echo "ERROR: Unexpected OpenCV version: $OPENCV_VERSION" && exit 1 ;; \
     esac
 
 # Install system dependencies
@@ -159,9 +159,9 @@ RUN /bin/bash -c '\
     echo "=== Starting colcon build ==="; \
     cd /tmp/ros_build; \
     colcon build \
-        --packages-select cv_bridge image_geometry \
-        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
-        --event-handlers console_direct+; \
+    --packages-select cv_bridge image_geometry \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+    --event-handlers console_direct+; \
     echo "=== Build completed successfully ==="; \
     ls -la install/; \
     '
@@ -174,9 +174,9 @@ RUN echo "=== Installing cv_bridge to /opt/ros/humble ===" && \
     cp -r /tmp/ros_build/install/image_geometry/lib/*.so* /opt/ros/humble/lib/ 2>/dev/null || true && \
     # Copy Python packages to site-packages
     cp -r /tmp/ros_build/install/cv_bridge/local/lib/python3.10/dist-packages/* \
-        /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
+    /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
     cp -r /tmp/ros_build/install/image_geometry/local/lib/python3.10/dist-packages/* \
-        /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
+    /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
     # Copy CMake/share files
     cp -r /tmp/ros_build/install/cv_bridge/share/* /opt/ros/humble/share/ 2>/dev/null || true && \
     cp -r /tmp/ros_build/install/image_geometry/share/* /opt/ros/humble/share/ 2>/dev/null || true && \
@@ -220,37 +220,37 @@ RUN pip3 install --upgrade pip setuptools wheel
 
 # Install system libraries required by PyTorch on Jetson
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends \
-            libopenmpi3 libopenmpi-dev \
-            libopenblas0 libopenblas-dev && \
-        rm -rf /var/lib/apt/lists/*; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libopenmpi3 libopenmpi-dev \
+    libopenblas0 libopenblas-dev && \
+    rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Install PyTorch based on build type
 RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
-        pip3 install torch torchvision \
-            --index-url https://download.pytorch.org/whl/cu121; \
+    pip3 install torch torchvision \
+    --index-url https://download.pytorch.org/whl/cu121; \
     elif [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        # L4T r36.2.0 ships with CUDA 12.2
-        # Download PyTorch wheel from NVIDIA (JetPack 6.0 / L4T r36.2.0)
-        wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
-            "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
-        pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
-        rm /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
-        # Install torchvision compatible with torch 2.3.0
-        pip3 install --no-cache-dir torchvision==0.18.0; \
+    # L4T r36.2.0 ships with CUDA 12.2
+    # Download PyTorch wheel from NVIDIA (JetPack 6.0 / L4T r36.2.0)
+    wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
+    "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
+    pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
+    rm /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
+    # Install torchvision compatible with torch 2.3.0
+    pip3 install --no-cache-dir torchvision==0.18.0; \
     else \
-        pip3 install torch torchvision \
-            --index-url https://download.pytorch.org/whl/cpu \
-            --ignore-installed sympy; \
+    pip3 install torch torchvision \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --ignore-installed sympy; \
     fi
 
 # Verify PyTorch installation (CUDA check deferred to runtime - no GPU during build)
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        python3 -c "import torch; \
-            print(f'PyTorch {torch.__version__} installed successfully'); \
-            print(f'CUDA build: {torch.version.cuda}'); \
-            print('Note: torch.cuda.is_available() requires runtime GPU access')"; \
+    python3 -c "import torch; \
+    print(f'PyTorch {torch.__version__} installed successfully'); \
+    print(f'CUDA build: {torch.version.cuda}'); \
+    print('Note: torch.cuda.is_available() requires runtime GPU access')"; \
     fi
 
 # Install other Python dependencies
@@ -273,16 +273,16 @@ RUN pip3 install --no-cache-dir --no-deps \
 # pycuda is required for TensorRT native inference
 # huggingface_hub is required for downloading ONNX models
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        pip3 install --no-cache-dir pycuda huggingface_hub && \
-        echo "TensorRT Python dependencies installed"; \
+    pip3 install --no-cache-dir pycuda huggingface_hub onnxruntime-gpu && \
+    echo "TensorRT Python dependencies installed"; \
     fi
 
 # Verify TensorRT dependencies are installed (Jetson only)
 # NOTE: Full TensorRT verification requires runtime GPU access, so we only verify
 # that pycuda was installed. TensorRT import will be verified at container runtime.
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        python3 -c "import pycuda; print('pycuda installed')" && \
-        echo "TensorRT verification deferred to runtime (requires GPU access)"; \
+    python3 -c "import pycuda; print('pycuda installed')" && \
+    echo "TensorRT verification deferred to runtime (requires GPU access)"; \
     fi
 
 # ==============================================================================
@@ -298,9 +298,9 @@ COPY --from=builder /usr/local/lib/python3.10/dist-packages \
 
 # Install system libraries required by PyTorch (Jetson only)
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends \
-            libopenmpi3 libopenblas0 && \
-        rm -rf /var/lib/apt/lists/*; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libopenmpi3 libopenblas0 && \
+    rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Create workspace
@@ -340,10 +340,10 @@ RUN chmod +x /app/scripts/setup_models.py
 ARG INSTALL_MODELS
 ARG DOWNLOAD_MODELS_AT_BUILD
 RUN if [ "$DOWNLOAD_MODELS_AT_BUILD" = "true" ] && [ -n "$INSTALL_MODELS" ]; then \
-        echo "Downloading models: $INSTALL_MODELS"; \
-        for model in $(echo $INSTALL_MODELS | tr ',' ' '); do \
-            python3 /app/scripts/setup_models.py --model "$model" --no-config; \
-        done; \
+    echo "Downloading models: $INSTALL_MODELS"; \
+    for model in $(echo $INSTALL_MODELS | tr ',' ' '); do \
+    python3 /app/scripts/setup_models.py --model "$model" --no-config; \
+    done; \
     fi
 
 # Copy TensorRT build script (for Jetson)
@@ -357,21 +357,21 @@ ARG TENSORRT_MODEL
 ARG TENSORRT_PRECISION
 ARG TENSORRT_RESOLUTION
 RUN if [ "$BUILD_TYPE" = "jetson-base" ] && [ "$BUILD_TENSORRT" = "true" ]; then \
-        echo "Building TensorRT engine: $TENSORRT_MODEL ($TENSORRT_PRECISION)"; \
-        mkdir -p /root/.cache/tensorrt /root/.cache/onnx; \
-        if [ "$TENSORRT_RESOLUTION" = "0" ]; then \
-            python3 /app/scripts/build_tensorrt_engine.py \
-                --model "$TENSORRT_MODEL" \
-                --precision "$TENSORRT_PRECISION" \
-                --output-dir /root/.cache \
-                --auto; \
-        else \
-            python3 /app/scripts/build_tensorrt_engine.py \
-                --model "$TENSORRT_MODEL" \
-                --precision "$TENSORRT_PRECISION" \
-                --resolution "$TENSORRT_RESOLUTION" \
-                --output-dir /root/.cache; \
-        fi; \
+    echo "Building TensorRT engine: $TENSORRT_MODEL ($TENSORRT_PRECISION)"; \
+    mkdir -p /root/.cache/tensorrt /root/.cache/onnx; \
+    if [ "$TENSORRT_RESOLUTION" = "0" ]; then \
+    python3 /app/scripts/build_tensorrt_engine.py \
+    --model "$TENSORRT_MODEL" \
+    --precision "$TENSORRT_PRECISION" \
+    --output-dir /root/.cache \
+    --auto; \
+    else \
+    python3 /app/scripts/build_tensorrt_engine.py \
+    --model "$TENSORRT_MODEL" \
+    --precision "$TENSORRT_PRECISION" \
+    --resolution "$TENSORRT_RESOLUTION" \
+    --output-dir /root/.cache; \
+    fi; \
     fi
 
 # Environment variables for runtime configuration

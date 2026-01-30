@@ -145,7 +145,7 @@ models:
     tensorrt:
       supported_precisions: ["fp16", "int8"]
       recommended_precision: "fp16"
-      supported_resolutions: [308, 518, 728, 1024]
+      supported_resolutions: [308, 518, 728, 1022]
       engine_naming: "da3-large_{precision}_{resolution}x{resolution}_{platform}.engine"
     recommended_for:
       - "AGX_ORIN_32GB"
@@ -161,13 +161,13 @@ models:
         fps_estimate: 50
         vram_usage_mb: 3800
       AGX_ORIN_64GB:
-        height: 1024
-        width: 1024
+        height: 1022
+        width: 1022
         fps_estimate: 30
         vram_usage_mb: 4500
       X86_GPU:
-        height: 1024
-        width: 1024
+        height: 1022
+        width: 1022
         fps_estimate: 60
         vram_usage_mb: 4500
 
@@ -254,13 +254,13 @@ models:
         fps_estimate: 45
         vram_usage_mb: 3800
       AGX_ORIN_64GB:
-        height: 1024
-        width: 1024
+        height: 1022
+        width: 1022
         fps_estimate: 25
         vram_usage_mb: 4500
       X86_GPU:
-        height: 1024
-        width: 1024
+        height: 1022
+        width: 1022
         fps_estimate: 55
         vram_usage_mb: 4500
 
@@ -358,8 +358,8 @@ resolution_presets:
     description: "High resolution - more detail, slower inference"
 
   ultra:
-    height: 1024
-    width: 1024
+    height: 1022
+    width: 1022
     description: "Ultra resolution - maximum detail, requires high-end GPU"
 
 # License information
@@ -438,7 +438,7 @@ tensorrt:
       expected_fps:
         da3-small_fp16_518: 60
         da3-large_fp16_518: 50
-        da3-large_fp16_1024: 30
+        da3-large_fp16_1022: 30
 
     X86_GPU:
       max_workspace_mb: 4096
