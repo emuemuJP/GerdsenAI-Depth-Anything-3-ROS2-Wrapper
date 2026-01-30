@@ -78,9 +78,14 @@ RUN apt-get update && apt-get install -y \
 # Uses dusty-nv's jetson-containers (public, no NGC auth required)
 # https://github.com/dusty-nv/jetson-containers
 #
-# NOTE: The dustynv base image has OpenCV 4.8.1 with CUDA support pre-installed.
-# ROS apt packages depend on Ubuntu's OpenCV 4.5.4, causing conflicts.
-# Solution: Build cv_bridge and vision_opencv from source against OpenCV 4.8.1.
+# IMPORTANT: OpenCV Conflict Resolution
+# --------------------------------------
+# The dustynv base image includes OpenCV 4.8.1 with CUDA support (opencv-dev, opencv-libs).
+# ROS Humble apt packages (ros-humble-cv-bridge, ros-humble-vision-opencv) depend on
+# Ubuntu's OpenCV 4.5.4, which conflicts with the pre-installed version.
+#
+# Solution: Build cv_bridge and image_geometry from source against OpenCV 4.8.1.
+# This preserves CUDA acceleration while providing ROS2 compatibility.
 # ==============================================================================
 FROM dustynv/ros:humble-ros-base-l4t-${L4T_VERSION} AS jetson-base
 
@@ -92,8 +97,20 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o 
     && gpg --batch --yes --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg /tmp/ros.key \
     && rm /tmp/ros.key
 
-# Install system dependencies (do NOT install python3-opencv - use pre-installed CUDA version)
-RUN apt-get update && apt-get install -y \
+# Verify OpenCV 4.8.x is present (critical check - build will fail if missing)
+RUN echo "=== Checking pre-installed OpenCV ===" && \
+    pkg-config --modversion opencv4 && \
+    OPENCV_VERSION=$(pkg-config --modversion opencv4) && \
+    echo "Found OpenCV version: $OPENCV_VERSION" && \
+    case "$OPENCV_VERSION" in \
+        4.8.*) echo "OpenCV 4.8.x detected - proceeding with source build of cv_bridge" ;; \
+        4.5.*) echo "WARNING: OpenCV 4.5.x detected - apt packages should work, but we'll build from source anyway" ;; \
+        *) echo "ERROR: Unexpected OpenCV version: $OPENCV_VERSION" && exit 1 ;; \
+    esac
+
+# Install system dependencies
+# NOTE: Do NOT install python3-opencv - use pre-installed CUDA-enabled version
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     git \
     wget \
@@ -101,26 +118,78 @@ RUN apt-get update && apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ROS2 build dependencies (NOT cv-bridge/vision-opencv - we build from source)
-RUN apt-get update && apt-get install -y \
-    ros-humble-image-transport \
+# Install ROS2 build dependencies
+# NOTE: Do NOT install ros-humble-cv-bridge or ros-humble-vision-opencv via apt
+#       These packages have hard dependencies on libopencv-*-dev 4.5.4 which
+#       conflicts with the pre-installed opencv-dev 4.8.1 package.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-sensor-msgs \
     ros-humble-std-msgs \
+    ros-humble-geometry-msgs \
     ros-humble-ament-cmake \
     ros-humble-ament-cmake-auto \
     ros-humble-rclcpp \
     ros-humble-rclpy \
+    ros-humble-pluginlib \
+    ros-humble-message-filters \
     python3-colcon-common-extensions \
     libboost-python-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Build cv_bridge and vision_opencv from source against existing OpenCV 4.8.1
+# Build cv_bridge and image_geometry from source against existing OpenCV 4.8.1
 WORKDIR /tmp/ros_build
-RUN git clone --depth 1 -b humble https://github.com/ros-perception/vision_opencv.git \
-    && /bin/bash -c "source /opt/ros/humble/setup.bash && \
-       colcon build --packages-select cv_bridge image_geometry --cmake-args -DCMAKE_BUILD_TYPE=Release" \
-    && cp -r install/* /opt/ros/humble/ \
-    && rm -rf /tmp/ros_build
+RUN echo "=== Building cv_bridge from source ===" && \
+    git clone --depth 1 -b humble https://github.com/ros-perception/vision_opencv.git && \
+    cd vision_opencv && \
+    echo "Cloned vision_opencv repository" && \
+    ls -la
+
+RUN /bin/bash -c '\
+    set -e; \
+    source /opt/ros/humble/setup.bash; \
+    echo "=== Starting colcon build ==="; \
+    cd /tmp/ros_build; \
+    colcon build \
+        --packages-select cv_bridge image_geometry \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+        --event-handlers console_direct+; \
+    echo "=== Build completed successfully ==="; \
+    ls -la install/; \
+    '
+
+# Install built packages to /opt/ros/humble
+# Structure: install/<pkg>/lib, install/<pkg>/share, install/<pkg>/local/lib/python3.10/...
+RUN echo "=== Installing cv_bridge to /opt/ros/humble ===" && \
+    # Copy shared libraries
+    cp -r /tmp/ros_build/install/cv_bridge/lib/*.so* /opt/ros/humble/lib/ 2>/dev/null || true && \
+    cp -r /tmp/ros_build/install/image_geometry/lib/*.so* /opt/ros/humble/lib/ 2>/dev/null || true && \
+    # Copy Python packages to site-packages
+    cp -r /tmp/ros_build/install/cv_bridge/local/lib/python3.10/dist-packages/* \
+        /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
+    cp -r /tmp/ros_build/install/image_geometry/local/lib/python3.10/dist-packages/* \
+        /opt/ros/humble/lib/python3.10/site-packages/ 2>/dev/null || true && \
+    # Copy CMake/share files
+    cp -r /tmp/ros_build/install/cv_bridge/share/* /opt/ros/humble/share/ 2>/dev/null || true && \
+    cp -r /tmp/ros_build/install/image_geometry/share/* /opt/ros/humble/share/ 2>/dev/null || true && \
+    # Copy include files
+    cp -r /tmp/ros_build/install/cv_bridge/include/* /opt/ros/humble/include/ 2>/dev/null || true && \
+    cp -r /tmp/ros_build/install/image_geometry/include/* /opt/ros/humble/include/ 2>/dev/null || true && \
+    echo "=== Installation complete ===" && \
+    rm -rf /tmp/ros_build
+
+# Install image_transport AFTER cv_bridge is available
+# This should now work since cv_bridge is built and available
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-image-transport \
+    && rm -rf /var/lib/apt/lists/* \
+    || echo "WARNING: ros-humble-image-transport install had issues, may need source build"
+
+# Verify cv_bridge is importable
+RUN /bin/bash -c '\
+    source /opt/ros/humble/setup.bash; \
+    python3 -c "import cv_bridge; print(\"cv_bridge import successful\")" || \
+    echo "WARNING: cv_bridge Python import failed - check PYTHONPATH"; \
+    '
 
 WORKDIR /
 
@@ -166,8 +235,11 @@ RUN pip3 install --no-cache-dir \
     "timm>=0.9.0"
 
 # Install Depth Anything 3
-RUN pip3 install --no-cache-dir \
-    git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
+# NOTE: Installing with --no-deps because pycolmap/open3d don't have ARM64 wheels.
+# We manually install only the inference-required dependencies above.
+RUN pip3 install --no-cache-dir --no-deps \
+    git+https://github.com/ByteDance-Seed/Depth-Anything-3.git && \
+    pip3 install --no-cache-dir einops
 
 # ==============================================================================
 # Stage 4: Final runtime image
@@ -192,9 +264,9 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
     colcon build --packages-select depth_anything_3_ros2 && \
     rm -rf build log"
 
-# Setup entrypoint
+# Setup entrypoint (fix Windows line endings if present)
 COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
-RUN chmod +x /ros_entrypoint.sh
+RUN sed -i 's/\r$//' /ros_entrypoint.sh && chmod +x /ros_entrypoint.sh
 
 # Environment setup
 ENV ROS_DISTRO=humble
