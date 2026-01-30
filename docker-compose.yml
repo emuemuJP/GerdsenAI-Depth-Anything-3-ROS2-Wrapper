@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # CPU-only deployment
   depth-anything-3-cpu:
@@ -16,10 +14,16 @@ services:
     environment:
       - ROS_DOMAIN_ID=0
       - DISPLAY=${DISPLAY}
+      # Model configuration (override detected defaults)
+      - DA3_MODEL=${DA3_MODEL:-}
+      - DA3_INFERENCE_HEIGHT=${DA3_INFERENCE_HEIGHT:-}
+      - DA3_INFERENCE_WIDTH=${DA3_INFERENCE_WIDTH:-}
+      - DA3_VRAM_LIMIT_MB=${DA3_VRAM_LIMIT_MB:-}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./models:/root/.cache/huggingface:rw
       - ./examples:/examples:ro
+      - ./config:/app/config:ro
     command: bash
 
   # GPU-enabled deployment (requires nvidia-docker)
@@ -41,10 +45,47 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - ROS_DOMAIN_ID=0
       - DISPLAY=${DISPLAY}
+      # Model configuration (override detected defaults)
+      - DA3_MODEL=${DA3_MODEL:-}
+      - DA3_INFERENCE_HEIGHT=${DA3_INFERENCE_HEIGHT:-}
+      - DA3_INFERENCE_WIDTH=${DA3_INFERENCE_WIDTH:-}
+      - DA3_VRAM_LIMIT_MB=${DA3_VRAM_LIMIT_MB:-}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./models:/root/.cache/huggingface:rw
       - ./examples:/examples:ro
+      - ./config:/app/config:ro
+      - /dev:/dev:rw  # For camera access
+    privileged: true  # Required for camera access
+    command: bash
+
+  # Jetson ARM64 deployment (for NVIDIA Jetson devices)
+  depth-anything-3-jetson:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_TYPE: jetson-base
+        L4T_VERSION: r36.2.0
+    image: depth_anything_3_ros2:jetson
+    container_name: da3_ros2_jetson
+    stdin_open: true
+    tty: true
+    network_mode: host
+    runtime: nvidia
+    environment:
+      - ROS_DOMAIN_ID=0
+      - DISPLAY=${DISPLAY}
+      # Model configuration (override detected defaults)
+      - DA3_MODEL=${DA3_MODEL:-}
+      - DA3_INFERENCE_HEIGHT=${DA3_INFERENCE_HEIGHT:-}
+      - DA3_INFERENCE_WIDTH=${DA3_INFERENCE_WIDTH:-}
+      - DA3_VRAM_LIMIT_MB=${DA3_VRAM_LIMIT_MB:-}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./models:/root/.cache/huggingface:rw
+      - ./examples:/examples:ro
+      - ./config:/app/config:ro
       - /dev:/dev:rw  # For camera access
     privileged: true  # Required for camera access
     command: bash
@@ -67,6 +108,11 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - ROS_DOMAIN_ID=0
       - DISPLAY=${DISPLAY}
+      # Model configuration (override detected defaults)
+      - DA3_MODEL=${DA3_MODEL:-}
+      - DA3_INFERENCE_HEIGHT=${DA3_INFERENCE_HEIGHT:-}
+      - DA3_INFERENCE_WIDTH=${DA3_INFERENCE_WIDTH:-}
+      - DA3_VRAM_LIMIT_MB=${DA3_VRAM_LIMIT_MB:-}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./models:/root/.cache/huggingface:rw
@@ -92,8 +138,14 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       - ROS_DOMAIN_ID=0
+      # Model configuration (override detected defaults)
+      - DA3_MODEL=${DA3_MODEL:-}
+      - DA3_INFERENCE_HEIGHT=${DA3_INFERENCE_HEIGHT:-}
+      - DA3_INFERENCE_WIDTH=${DA3_INFERENCE_WIDTH:-}
+      - DA3_VRAM_LIMIT_MB=${DA3_VRAM_LIMIT_MB:-}
     volumes:
       - ./models:/root/.cache/huggingface:rw
+      - ./config:/app/config:ro
       - /dev:/dev:rw
     privileged: true
     command: >

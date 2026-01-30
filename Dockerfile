@@ -1,12 +1,17 @@
 # Depth Anything 3 ROS2 Wrapper - Docker Image
 # Multi-stage build for optimized image size
-# Supports both CPU and CUDA builds
+# Supports CPU, CUDA (x86), and Jetson ARM64 builds
 
 # Build arguments
 ARG ROS_DISTRO=humble
 ARG CUDA_VERSION=12.2.0
 ARG UBUNTU_VERSION=22.04
+ARG L4T_VERSION=r36.2.0
 ARG BUILD_TYPE=base
+
+# Model selection arguments (used by setup_models.py)
+ARG INSTALL_MODELS=""
+ARG DOWNLOAD_MODELS_AT_BUILD=false
 
 # ==============================================================================
 # Stage 1: Base image with ROS2 Humble
@@ -69,6 +74,57 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ==============================================================================
+# Stage 2b: Jetson ARM64 image (for NVIDIA Jetson devices)
+# Uses dusty-nv's jetson-containers (public, no NGC auth required)
+# https://github.com/dusty-nv/jetson-containers
+#
+# NOTE: The dustynv base image has OpenCV 4.8.1 with CUDA support pre-installed.
+# ROS apt packages depend on Ubuntu's OpenCV 4.5.4, causing conflicts.
+# Solution: Build cv_bridge and vision_opencv from source against OpenCV 4.8.1.
+# ==============================================================================
+FROM dustynv/ros:humble-ros-base-l4t-${L4T_VERSION} AS jetson-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Refresh ROS GPG key (may be expired in base image)
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /tmp/ros.key \
+    && gpg --batch --yes --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg /tmp/ros.key \
+    && rm /tmp/ros.key
+
+# Install system dependencies (do NOT install python3-opencv - use pre-installed CUDA version)
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    git \
+    wget \
+    curl \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ROS2 build dependencies (NOT cv-bridge/vision-opencv - we build from source)
+RUN apt-get update && apt-get install -y \
+    ros-humble-image-transport \
+    ros-humble-sensor-msgs \
+    ros-humble-std-msgs \
+    ros-humble-ament-cmake \
+    ros-humble-ament-cmake-auto \
+    ros-humble-rclcpp \
+    ros-humble-rclpy \
+    python3-colcon-common-extensions \
+    libboost-python-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build cv_bridge and vision_opencv from source against existing OpenCV 4.8.1
+WORKDIR /tmp/ros_build
+RUN git clone --depth 1 -b humble https://github.com/ros-perception/vision_opencv.git \
+    && /bin/bash -c "source /opt/ros/humble/setup.bash && \
+       colcon build --packages-select cv_bridge image_geometry --cmake-args -DCMAKE_BUILD_TYPE=Release" \
+    && cp -r install/* /opt/ros/humble/ \
+    && rm -rf /tmp/ros_build
+
+WORKDIR /
+
+# ==============================================================================
 # Stage 3: Build stage (installs Python dependencies)
 # ==============================================================================
 FROM ${BUILD_TYPE} AS builder
@@ -88,6 +144,12 @@ RUN pip3 install --upgrade pip setuptools wheel
 RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
         pip3 install torch torchvision \
             --index-url https://download.pytorch.org/whl/cu121; \
+    elif [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        # Jetson uses PyTorch wheels from NVIDIA's Jetson AI Lab or pre-installed from JetPack
+        pip3 install --no-cache-dir \
+            --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126 \
+            torch torchvision || \
+        pip3 install torch torchvision; \
     else \
         pip3 install torch torchvision \
             --index-url https://download.pytorch.org/whl/cpu \
@@ -142,6 +204,30 @@ ENV PYTHONPATH=/ros2_ws/install/depth_anything_3_ros2/lib/python3.10/site-packag
 # Source ROS2 workspace in bashrc
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
     echo "source /ros2_ws/install/setup.bash" >> ~/.bashrc
+
+# Install PyYAML for setup_models.py
+RUN pip3 install --no-cache-dir pyyaml
+
+# Copy setup script and model catalog
+COPY scripts/setup_models.py /app/scripts/setup_models.py
+COPY config/model_catalog.yaml /app/config/model_catalog.yaml
+RUN chmod +x /app/scripts/setup_models.py
+
+# Optionally download models at build time
+ARG INSTALL_MODELS
+ARG DOWNLOAD_MODELS_AT_BUILD
+RUN if [ "$DOWNLOAD_MODELS_AT_BUILD" = "true" ] && [ -n "$INSTALL_MODELS" ]; then \
+        echo "Downloading models: $INSTALL_MODELS"; \
+        for model in $(echo $INSTALL_MODELS | tr ',' ' '); do \
+            python3 /app/scripts/setup_models.py --model "$model" --no-config; \
+        done; \
+    fi
+
+# Environment variables for runtime configuration
+ENV DA3_MODEL=""
+ENV DA3_INFERENCE_HEIGHT=""
+ENV DA3_INFERENCE_WIDTH=""
+ENV DA3_VRAM_LIMIT_MB=""
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
 CMD ["bash"]
