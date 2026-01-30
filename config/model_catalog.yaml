@@ -1,0 +1,349 @@
+# Depth Anything 3 Model Catalog
+# This file defines available models with their specifications and platform recommendations.
+# Used by setup_models.py for interactive model selection.
+
+models:
+  DA3-SMALL:
+    hf_id: "depth-anything/DA3-SMALL"
+    display_name: "DA3-Small"
+    parameters: "30M"
+    vram_required_mb: 1000
+    license: "Apache-2.0"
+    license_commercial: true
+    description: "Lightweight model for resource-constrained devices"
+    output_type: "relative"
+    recommended_for:
+      - "ORIN_NANO_4GB"
+      - "ORIN_NANO_8GB"
+      - "ORIN_NX_8GB"
+      - "XAVIER_NX"
+    compatible_with:
+      - "ALL"
+    optimal_resolutions:
+      ORIN_NANO_4GB:
+        height: 308
+        width: 308
+        fps_estimate: 30
+        vram_usage_mb: 626
+      ORIN_NANO_8GB:
+        height: 308
+        width: 308
+        fps_estimate: 42
+        vram_usage_mb: 626
+      ORIN_NX_8GB:
+        height: 308
+        width: 308
+        fps_estimate: 42
+        vram_usage_mb: 626
+      ORIN_NX_16GB:
+        height: 518
+        width: 518
+        fps_estimate: 20
+        vram_usage_mb: 689
+      AGX_ORIN_32GB:
+        height: 518
+        width: 518
+        fps_estimate: 50
+        vram_usage_mb: 689
+      AGX_ORIN_64GB:
+        height: 518
+        width: 518
+        fps_estimate: 60
+        vram_usage_mb: 689
+      XAVIER_NX:
+        height: 308
+        width: 308
+        fps_estimate: 20
+        vram_usage_mb: 626
+      X86_GPU:
+        height: 518
+        width: 518
+        fps_estimate: 100
+        vram_usage_mb: 689
+      CPU_ONLY:
+        height: 308
+        width: 308
+        fps_estimate: 2
+        vram_usage_mb: 0
+
+  DA3-BASE:
+    hf_id: "depth-anything/DA3-BASE"
+    display_name: "DA3-Base"
+    parameters: "100M"
+    vram_required_mb: 2000
+    license: "CC-BY-NC-4.0"
+    license_commercial: false
+    description: "Balanced performance and accuracy"
+    output_type: "relative"
+    recommended_for:
+      - "ORIN_NX_16GB"
+    compatible_with:
+      - "ORIN_NX_16GB"
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+      - "AGX_XAVIER"
+      - "X86_GPU"
+    optimal_resolutions:
+      ORIN_NX_16GB:
+        height: 518
+        width: 518
+        fps_estimate: 15
+        vram_usage_mb: 1800
+      AGX_ORIN_32GB:
+        height: 518
+        width: 518
+        fps_estimate: 35
+        vram_usage_mb: 1800
+      AGX_ORIN_64GB:
+        height: 518
+        width: 518
+        fps_estimate: 45
+        vram_usage_mb: 1800
+      AGX_XAVIER:
+        height: 518
+        width: 518
+        fps_estimate: 20
+        vram_usage_mb: 1800
+      X86_GPU:
+        height: 518
+        width: 518
+        fps_estimate: 80
+        vram_usage_mb: 1800
+
+  DA3-LARGE-1.1:
+    hf_id: "depth-anything/DA3-LARGE-1.1"
+    display_name: "DA3-Large-1.1"
+    parameters: "350M"
+    vram_required_mb: 4000
+    license: "CC-BY-NC-4.0"
+    license_commercial: false
+    description: "High accuracy model - version 1.1 fixes training bugs"
+    output_type: "relative"
+    recommended_for:
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+    compatible_with:
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+      - "X86_GPU"
+    optimal_resolutions:
+      AGX_ORIN_32GB:
+        height: 518
+        width: 518
+        fps_estimate: 50
+        vram_usage_mb: 3800
+      AGX_ORIN_64GB:
+        height: 1024
+        width: 1024
+        fps_estimate: 30
+        vram_usage_mb: 4500
+      X86_GPU:
+        height: 1024
+        width: 1024
+        fps_estimate: 60
+        vram_usage_mb: 4500
+
+  DA3-GIANT-1.1:
+    hf_id: "depth-anything/DA3-GIANT-1.1"
+    display_name: "DA3-Giant-1.1"
+    parameters: "1B+"
+    vram_required_mb: 12000
+    license: "CC-BY-NC-4.0"
+    license_commercial: false
+    description: "Maximum accuracy for research and high-end systems"
+    output_type: "relative"
+    recommended_for:
+      - "AGX_ORIN_64GB"
+    compatible_with:
+      - "AGX_ORIN_64GB"
+      - "X86_GPU"
+    optimal_resolutions:
+      AGX_ORIN_64GB:
+        height: 518
+        width: 518
+        fps_estimate: 15
+        vram_usage_mb: 11000
+      X86_GPU:
+        height: 518
+        width: 518
+        fps_estimate: 30
+        vram_usage_mb: 11000
+
+  DA3METRIC-LARGE:
+    hf_id: "depth-anything/DA3METRIC-LARGE"
+    display_name: "DA3-Metric-Large"
+    parameters: "350M"
+    vram_required_mb: 4000
+    license: "CC-BY-NC-4.0"
+    license_commercial: false
+    description: "Metric depth output (meters) - requires camera intrinsics"
+    output_type: "metric"
+    use_case: "robotics_navigation"
+    recommended_for:
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+    compatible_with:
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+      - "X86_GPU"
+    optimal_resolutions:
+      AGX_ORIN_32GB:
+        height: 518
+        width: 518
+        fps_estimate: 45
+        vram_usage_mb: 3800
+      AGX_ORIN_64GB:
+        height: 518
+        width: 518
+        fps_estimate: 55
+        vram_usage_mb: 3800
+      X86_GPU:
+        height: 518
+        width: 518
+        fps_estimate: 60
+        vram_usage_mb: 3800
+
+  DA3MONO-LARGE:
+    hf_id: "depth-anything/DA3MONO-LARGE"
+    display_name: "DA3-Mono-Large"
+    parameters: "350M"
+    vram_required_mb: 4000
+    license: "CC-BY-NC-4.0"
+    license_commercial: false
+    description: "Highest quality monocular relative depth - predicts depth directly"
+    output_type: "relative"
+    use_case: "high_quality_depth"
+    recommended_for:
+      - "AGX_ORIN_64GB"
+    compatible_with:
+      - "AGX_ORIN_32GB"
+      - "AGX_ORIN_64GB"
+      - "X86_GPU"
+    optimal_resolutions:
+      AGX_ORIN_32GB:
+        height: 518
+        width: 518
+        fps_estimate: 45
+        vram_usage_mb: 3800
+      AGX_ORIN_64GB:
+        height: 1024
+        width: 1024
+        fps_estimate: 25
+        vram_usage_mb: 4500
+      X86_GPU:
+        height: 1024
+        width: 1024
+        fps_estimate: 55
+        vram_usage_mb: 4500
+
+# Platform specifications for reference
+platforms:
+  ORIN_NANO_4GB:
+    display_name: "Jetson Orin Nano 4GB"
+    total_ram_gb: 4
+    gpu_cores: 512
+    tensor_cores: 16
+    max_power_w: 10
+    jetpack_support: ["6.x"]
+
+  ORIN_NANO_8GB:
+    display_name: "Jetson Orin Nano 8GB"
+    total_ram_gb: 8
+    gpu_cores: 1024
+    tensor_cores: 32
+    max_power_w: 15
+    jetpack_support: ["6.x"]
+
+  ORIN_NX_8GB:
+    display_name: "Jetson Orin NX 8GB"
+    total_ram_gb: 8
+    gpu_cores: 1024
+    tensor_cores: 32
+    max_power_w: 20
+    jetpack_support: ["6.x"]
+
+  ORIN_NX_16GB:
+    display_name: "Jetson Orin NX 16GB"
+    total_ram_gb: 16
+    gpu_cores: 1024
+    tensor_cores: 32
+    max_power_w: 25
+    jetpack_support: ["6.x"]
+
+  AGX_ORIN_32GB:
+    display_name: "Jetson AGX Orin 32GB"
+    total_ram_gb: 32
+    gpu_cores: 1792
+    tensor_cores: 56
+    max_power_w: 60
+    jetpack_support: ["6.x"]
+
+  AGX_ORIN_64GB:
+    display_name: "Jetson AGX Orin 64GB"
+    total_ram_gb: 64
+    gpu_cores: 2048
+    tensor_cores: 64
+    max_power_w: 75
+    jetpack_support: ["6.x"]
+
+  XAVIER_NX:
+    display_name: "Jetson Xavier NX"
+    total_ram_gb: 8
+    gpu_cores: 384
+    tensor_cores: 48
+    max_power_w: 20
+    jetpack_support: ["5.x"]
+    note: "EOL January 2028"
+
+  AGX_XAVIER:
+    display_name: "Jetson AGX Xavier"
+    total_ram_gb: 32
+    gpu_cores: 512
+    tensor_cores: 64
+    max_power_w: 60
+    jetpack_support: ["5.x"]
+    note: "EOL January 2028"
+
+  X86_GPU:
+    display_name: "x86 with NVIDIA GPU"
+    note: "Performance varies by GPU model"
+
+  CPU_ONLY:
+    display_name: "CPU Only (No GPU)"
+    note: "Very slow inference, use only for testing"
+
+# Resolution presets (must be divisible by 14 for ViT patch size)
+resolution_presets:
+  low:
+    height: 308
+    width: 308
+    description: "Low resolution - fastest, suitable for obstacle avoidance"
+
+  medium:
+    height: 518
+    width: 518
+    description: "Medium resolution - balanced speed and detail"
+
+  high:
+    height: 728
+    width: 728
+    description: "High resolution - more detail, slower inference"
+
+  ultra:
+    height: 1024
+    width: 1024
+    description: "Ultra resolution - maximum detail, requires high-end GPU"
+
+# License information
+licenses:
+  Apache-2.0:
+    name: "Apache License 2.0"
+    commercial_use: true
+    url: "https://www.apache.org/licenses/LICENSE-2.0"
+    summary: "Permissive license allowing commercial use"
+
+  CC-BY-NC-4.0:
+    name: "Creative Commons Attribution-NonCommercial 4.0"
+    commercial_use: false
+    url: "https://creativecommons.org/licenses/by-nc/4.0/"
+    summary: "Non-commercial use only. Contact ByteDance for commercial licensing."
