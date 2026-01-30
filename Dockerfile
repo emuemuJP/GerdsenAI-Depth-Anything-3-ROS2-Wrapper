@@ -13,6 +13,13 @@ ARG BUILD_TYPE=base
 ARG INSTALL_MODELS=""
 ARG DOWNLOAD_MODELS_AT_BUILD=false
 
+# TensorRT configuration (Jetson only)
+# Set BUILD_TENSORRT=true to build TensorRT engine at image build time
+ARG BUILD_TENSORRT=false
+ARG TENSORRT_MODEL=da3-small
+ARG TENSORRT_PRECISION=fp16
+ARG TENSORRT_RESOLUTION=0
+
 # ==============================================================================
 # Stage 1: Base image with ROS2 Humble
 # ==============================================================================
@@ -110,8 +117,10 @@ RUN echo "=== Checking pre-installed OpenCV ===" && \
 
 # Install system dependencies
 # NOTE: Do NOT install python3-opencv - use pre-installed CUDA-enabled version
+# NOTE: python3-dev is required for pycuda compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
+    python3-dev \
     git \
     wget \
     curl \
@@ -260,6 +269,20 @@ RUN pip3 install --no-cache-dir --no-deps \
     git+https://github.com/ByteDance-Seed/Depth-Anything-3.git && \
     pip3 install --no-cache-dir einops
 
+# Install TensorRT dependencies (Jetson only)
+# pycuda is required for TensorRT native inference
+# huggingface_hub is required for downloading ONNX models
+RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        pip3 install --no-cache-dir pycuda huggingface_hub && \
+        echo "TensorRT Python dependencies installed"; \
+    fi
+
+# Verify TensorRT is accessible (Jetson only)
+RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        python3 -c "import tensorrt; print(f'TensorRT {tensorrt.__version__}')" && \
+        python3 -c "import pycuda.driver as cuda; cuda.init(); print('pycuda OK')"; \
+    fi
+
 # ==============================================================================
 # Stage 4: Final runtime image
 # ==============================================================================
@@ -319,6 +342,34 @@ RUN if [ "$DOWNLOAD_MODELS_AT_BUILD" = "true" ] && [ -n "$INSTALL_MODELS" ]; the
         for model in $(echo $INSTALL_MODELS | tr ',' ' '); do \
             python3 /app/scripts/setup_models.py --model "$model" --no-config; \
         done; \
+    fi
+
+# Copy TensorRT build script (for Jetson)
+COPY scripts/build_tensorrt_engine.py /app/scripts/build_tensorrt_engine.py
+RUN chmod +x /app/scripts/build_tensorrt_engine.py
+
+# Optionally build TensorRT engine at build time (Jetson only)
+# Use BUILD_TENSORRT=true to enable, TENSORRT_RESOLUTION=0 for auto-detect
+ARG BUILD_TENSORRT
+ARG TENSORRT_MODEL
+ARG TENSORRT_PRECISION
+ARG TENSORRT_RESOLUTION
+RUN if [ "$BUILD_TYPE" = "jetson-base" ] && [ "$BUILD_TENSORRT" = "true" ]; then \
+        echo "Building TensorRT engine: $TENSORRT_MODEL ($TENSORRT_PRECISION)"; \
+        mkdir -p /root/.cache/tensorrt /root/.cache/onnx; \
+        if [ "$TENSORRT_RESOLUTION" = "0" ]; then \
+            python3 /app/scripts/build_tensorrt_engine.py \
+                --model "$TENSORRT_MODEL" \
+                --precision "$TENSORRT_PRECISION" \
+                --output-dir /root/.cache \
+                --auto; \
+        else \
+            python3 /app/scripts/build_tensorrt_engine.py \
+                --model "$TENSORRT_MODEL" \
+                --precision "$TENSORRT_PRECISION" \
+                --resolution "$TENSORRT_RESOLUTION" \
+                --output-dir /root/.cache; \
+        fi; \
     fi
 
 # Environment variables for runtime configuration
