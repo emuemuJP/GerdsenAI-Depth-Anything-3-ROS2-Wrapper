@@ -209,20 +209,39 @@ COPY requirements.txt .
 # Upgrade pip
 RUN pip3 install --upgrade pip setuptools wheel
 
+# Install system libraries required by PyTorch on Jetson
+RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            libopenmpi3 libopenmpi-dev \
+            libopenblas0 libopenblas-dev && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Install PyTorch based on build type
 RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
         pip3 install torch torchvision \
             --index-url https://download.pytorch.org/whl/cu121; \
     elif [ "$BUILD_TYPE" = "jetson-base" ]; then \
-        # Jetson uses PyTorch wheels from NVIDIA's Jetson AI Lab or pre-installed from JetPack
-        pip3 install --no-cache-dir \
-            --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126 \
-            torch torchvision || \
-        pip3 install torch torchvision; \
+        # L4T r36.2.0 ships with CUDA 12.2
+        # Download PyTorch wheel from NVIDIA (JetPack 6.0 / L4T r36.2.0)
+        wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
+            "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
+        pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
+        rm /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
+        # Install torchvision compatible with torch 2.3.0
+        pip3 install --no-cache-dir torchvision==0.18.0; \
     else \
         pip3 install torch torchvision \
             --index-url https://download.pytorch.org/whl/cpu \
             --ignore-installed sympy; \
+    fi
+
+# Verify PyTorch installation (CUDA check deferred to runtime - no GPU during build)
+RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        python3 -c "import torch; \
+            print(f'PyTorch {torch.__version__} installed successfully'); \
+            print(f'CUDA build: {torch.version.cuda}'); \
+            print('Note: torch.cuda.is_available() requires runtime GPU access')"; \
     fi
 
 # Install other Python dependencies
@@ -251,6 +270,13 @@ ARG BUILD_TYPE
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.10/dist-packages \
     /usr/local/lib/python3.10/dist-packages
+
+# Install system libraries required by PyTorch (Jetson only)
+RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            libopenmpi3 libopenblas0 && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Create workspace
 RUN mkdir -p /ros2_ws/src
