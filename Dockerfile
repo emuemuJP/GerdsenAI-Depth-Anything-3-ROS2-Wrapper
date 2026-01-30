@@ -282,6 +282,7 @@ RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
 # that pycuda and onnxruntime-gpu were installed. TensorRT import will be verified at container runtime.
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
     python3 -c "import pycuda; print('pycuda installed')" && \
+    python3 -c "import onnxruntime; print('onnxruntime-gpu installed')" && \
     echo "TensorRT verification deferred to runtime (requires GPU access)"; \
     fi
 

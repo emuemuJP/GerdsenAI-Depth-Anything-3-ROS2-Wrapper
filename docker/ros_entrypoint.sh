@@ -18,6 +18,15 @@ if [ "${DA3_TENSORRT_AUTO:-false}" = "true" ]; then
     ENGINE_DIR="/root/.cache/tensorrt"
     ONNX_DIR="/root/.cache/onnx"
 
+    # Validate TensorRT is available at runtime
+    echo "[TensorRT] Validating TensorRT availability..."
+    if python3 -c "import tensorrt; print(f'TensorRT {tensorrt.__version__} available')" 2>/dev/null; then
+        echo "[TensorRT] TensorRT validation successful"
+    else
+        echo "[TensorRT] WARNING: TensorRT import failed. Falling back to PyTorch."
+        echo "[TensorRT] Ensure you're running on a JetPack 6.x system with nvidia-container-runtime."
+    fi
+
     # Check if any .engine files exist
     if [ ! -d "$ENGINE_DIR" ] || [ -z "$(ls -A $ENGINE_DIR/*.engine 2>/dev/null)" ]; then
         echo "[TensorRT] No engines found in $ENGINE_DIR"

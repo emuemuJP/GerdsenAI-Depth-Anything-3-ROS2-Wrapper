@@ -24,6 +24,7 @@ PLATFORM_AGX_ORIN_32GB = "AGX_ORIN_32GB"
 PLATFORM_AGX_ORIN_64GB = "AGX_ORIN_64GB"
 PLATFORM_XAVIER_NX = "XAVIER_NX"
 PLATFORM_AGX_XAVIER = "AGX_XAVIER"
+PLATFORM_AGX_THOR = "AGX_THOR"  # Future: Jetson THOR (128GB, Blackwell)
 PLATFORM_X86_GPU = "X86_GPU"
 PLATFORM_CPU_ONLY = "CPU_ONLY"
 PLATFORM_UNKNOWN = "UNKNOWN"
@@ -276,6 +277,10 @@ def identify_jetson_platform(ram_gb: float, model_name: str) -> str:
     """
     model_lower = model_name.lower()
 
+    # AGX THOR detection (Future: 128GB LPDDR5X, Blackwell GPU)
+    if "thor" in model_lower:
+        return PLATFORM_AGX_THOR
+
     # AGX Orin detection
     if "agx" in model_lower and "orin" in model_lower:
         if ram_gb >= 56:
@@ -474,6 +479,14 @@ def get_platform_recommendations(platform: str) -> Dict[str, Any]:
             "max_model": "DA3-BASE",
             "expected_fps": 25,
             "vram_budget_mb": 4000,
+        },
+        # Future: Jetson THOR (128GB LPDDR5X, Blackwell GPU)
+        PLATFORM_AGX_THOR: {
+            "recommended_model": "DA3-GIANT-1.1",
+            "recommended_resolution": (728, 728),
+            "max_model": "DA3-GIANT-1.1",
+            "expected_fps": 100,  # Estimated with 7.5x perf over Orin
+            "vram_budget_mb": 32000,
         },
         PLATFORM_X86_GPU: {
             "recommended_model": "DA3-BASE",

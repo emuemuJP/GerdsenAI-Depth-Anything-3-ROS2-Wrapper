@@ -71,12 +71,14 @@ ONNX_MODELS = {
 }
 
 # Platform-specific TensorRT optimization settings
+# Supports: Orin series, Xavier series, and future THOR
 PLATFORM_CONFIGS = {
+    # === Orin Nano Series ===
     "ORIN_NANO_4GB": {
         "max_workspace_mb": 512,
         "recommended_precision": "fp16",
         "recommended_resolution": 308,
-        "dla_enabled": False,
+        "dla_enabled": False,  # Orin Nano has no DLA
     },
     "ORIN_NANO_8GB": {
         "max_workspace_mb": 1024,
@@ -84,11 +86,12 @@ PLATFORM_CONFIGS = {
         "recommended_resolution": 308,
         "dla_enabled": False,
     },
+    # === Orin NX Series ===
     "ORIN_NX_8GB": {
         "max_workspace_mb": 1024,
         "recommended_precision": "fp16",
         "recommended_resolution": 308,
-        "dla_enabled": True,
+        "dla_enabled": True,  # 1x DLA core
     },
     "ORIN_NX_16GB": {
         "max_workspace_mb": 2048,
@@ -96,11 +99,12 @@ PLATFORM_CONFIGS = {
         "recommended_resolution": 518,
         "dla_enabled": True,
     },
+    # === AGX Orin Series ===
     "AGX_ORIN_32GB": {
         "max_workspace_mb": 4096,
         "recommended_precision": "fp16",
         "recommended_resolution": 518,
-        "dla_enabled": True,
+        "dla_enabled": True,  # 2x DLA cores
     },
     "AGX_ORIN_64GB": {
         "max_workspace_mb": 8192,
@@ -108,10 +112,38 @@ PLATFORM_CONFIGS = {
         "recommended_resolution": 518,
         "dla_enabled": True,
     },
+    # === Xavier Series (Legacy but still capable) ===
+    "XAVIER_NX": {
+        "max_workspace_mb": 1024,
+        "recommended_precision": "fp16",
+        "recommended_resolution": 308,
+        "dla_enabled": True,  # 2x DLA cores
+    },
+    "AGX_XAVIER": {
+        "max_workspace_mb": 2048,
+        "recommended_precision": "fp16",
+        "recommended_resolution": 518,
+        "dla_enabled": True,  # 2x DLA cores
+    },
+    # === Jetson THOR (Future - 128GB LPDDR5X, Blackwell GPU) ===
+    "AGX_THOR": {
+        "max_workspace_mb": 16384,
+        "recommended_precision": "fp16",  # Could use FP8 with Blackwell
+        "recommended_resolution": 728,  # Higher res for 128GB unified memory
+        "dla_enabled": True,
+    },
+    # === x86/Desktop GPU ===
     "X86_GPU": {
         "max_workspace_mb": 4096,
         "recommended_precision": "fp16",
         "recommended_resolution": 518,
+        "dla_enabled": False,
+    },
+    # === Fallback for unknown platforms (conservative settings) ===
+    "UNKNOWN": {
+        "max_workspace_mb": 512,
+        "recommended_precision": "fp16",
+        "recommended_resolution": 308,
         "dla_enabled": False,
     },
 }
@@ -426,10 +458,29 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
     print(f"  Resolution: {resolution}x{resolution}")
     print(f"  Workspace: {workspace} MB")
     if dla_enabled:
-        print(f"  DLA: Enabled (will use DLA core 0 for power efficiency)")
+        print("  DLA: Enabled (will use DLA core 0 for power efficiency)")
+        print("  Note: Some ViT ops may fallback to GPU (Gelu, LayerNorm)")
 
-    # Use DA3-Small as default (best balance for Jetson)
-    model_key = "da3-small"
+    # Select model based on platform recommendations
+    # Map platform recommendations to ONNX model keys
+    model_mapping = {
+        "DA3-SMALL": "da3-small",
+        "DA3-BASE": "da3-base",
+        "DA3-LARGE-1.1": "da3-large",
+        "DA3-GIANT-1.1": "da3-large",  # Fallback to da3-large (giant not available as ONNX)
+    }
+
+    # Get platform-specific recommendation
+    try:
+        from depth_anything_3_ros2.jetson_detector import get_platform_recommendations
+
+        recommendations = get_platform_recommendations(platform)
+        recommended_model = recommendations.get("recommended_model", "DA3-SMALL")
+        model_key = model_mapping.get(recommended_model, "da3-small")
+        print(f"  Model: {recommended_model} (platform-recommended)")
+    except ImportError:
+        model_key = "da3-small"
+        print(f"  Model: da3-small (default - jetson_detector not available)")
 
     # Download ONNX model
     onnx_dir = output_dir / "onnx"
