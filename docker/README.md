@@ -355,14 +355,31 @@ scp -r . user@jetson-ip:~/depth_anything_3_ros2/
 | **pycolmap/evo** | Runtime patched | No ARM64 wheels |
 | **Final Image Size** | ~14.9GB | Includes PyTorch, ROS2, models |
 
-### Expected Performance
+### Validated Performance
 
-| Backend | Model | Resolution | FPS | Notes |
-|---------|-------|------------|-----|-------|
-| PyTorch FP32 | DA3-SMALL | 518x518 | ~5.2 | Baseline |
-| TensorRT FP16 | DA3-SMALL | 518x518 | ~20-30 | Requires image rebuild |
+Measured on Jetson Orin NX 16GB (2026-01-31):
 
-**TensorRT Status**: Available with L4T r36.4.0 base image (TensorRT 10.3). Rebuild Docker image to enable.
+| Backend | Model | Resolution | FPS | GPU Latency | Speedup | Status |
+|---------|-------|------------|-----|-------------|---------|--------|
+| PyTorch FP32 | DA3-SMALL | 518x518 | 5.2 | ~193ms | Baseline | Functional |
+| TensorRT FP16 | DA3-SMALL | 518x518 | 35.3 | 26.4ms median | 6.8x | Validated |
+
+**TensorRT Validation Details:**
+- Platform: Jetson Orin NX 16GB
+- Base image: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
+- TensorRT: 10.3
+- Engine size: 58MB
+- Validation: Phase 1 complete (host script)
+- Docker integration: Phase 2 in progress
+
+**To enable TensorRT:**
+```bash
+# Rebuild Docker image with L4T r36.4.0 base
+docker compose build depth-anything-3-jetson
+
+# Run with auto TensorRT engine build
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
 
 ### Manual Build (Alternative)
 
