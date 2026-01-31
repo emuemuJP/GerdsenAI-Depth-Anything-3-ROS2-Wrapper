@@ -355,13 +355,14 @@ scp -r . user@jetson-ip:~/depth_anything_3_ros2/
 | **pycolmap/evo** | Runtime patched | No ARM64 wheels |
 | **Final Image Size** | ~14.9GB | Includes PyTorch, ROS2, models |
 
-### Current Performance (PyTorch Baseline)
+### Expected Performance
 
-| Model | Resolution | FPS | Inference Time |
-|-------|------------|-----|----------------|
-| DA3-SMALL | 518x518 | ~5.2 | ~193ms |
+| Backend | Model | Resolution | FPS | Notes |
+|---------|-------|------------|-----|-------|
+| PyTorch FP32 | DA3-SMALL | 518x518 | ~5.2 | Baseline |
+| TensorRT FP16 | DA3-SMALL | 518x518 | ~20-30 | Requires image rebuild |
 
-**Note**: TensorRT acceleration is currently blocked due to ONNX opset 18 incompatibility with TensorRT 8.6.2. See [TODO.md](../TODO.md) for details.
+**TensorRT Status**: Available with L4T r36.4.0 base image (TensorRT 10.3). Rebuild Docker image to enable.
 
 ### Manual Build (Alternative)
 

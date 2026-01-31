@@ -41,16 +41,16 @@ This document records measured performance baselines for future reference and co
 
 ---
 
-## Known Limitations
+## TensorRT Status
 
-### TensorRT Blocked
+### Solution Implemented
 
 | Aspect | Details |
 |--------|---------|
-| **Issue** | TensorRT 8.6.2 supports max ONNX opset 17 |
-| **DA3 Models** | Export with opset 18+ |
-| **Impact** | TensorRT acceleration unavailable |
-| **Workarounds** | Under investigation (see TODO.md) |
+| **Previous Issue** | TensorRT 8.6.2 incompatible with DINOv2 Einsum ops |
+| **Solution** | Docker image updated to L4T r36.4.0 (TensorRT 10.3) |
+| **Status** | Ready for testing - rebuild Docker image |
+| **Expected FPS** | 20-30 FPS with TensorRT FP16 |
 
 ### torchvision Build Requirement
 

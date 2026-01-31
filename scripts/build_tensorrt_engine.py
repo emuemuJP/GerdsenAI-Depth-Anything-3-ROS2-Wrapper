@@ -512,7 +512,7 @@ def auto_build(output_dir: Path, verbose: bool = False) -> bool:
         print("\nTo use in ROS2:")
         print(
             "  ros2 launch depth_anything_3_ros2 "
-            f"depth_anything_3_optimized.launch.py \\"
+            "depth_anything_3_optimized.launch.py \\"
         )
         print("    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
@@ -667,7 +667,7 @@ def main():
         print("\nTo use in ROS2:")
         print(
             "  ros2 launch depth_anything_3_ros2 "
-            f"depth_anything_3_optimized.launch.py \\"
+            "depth_anything_3_optimized.launch.py \\"
         )
         print("    backend:=tensorrt_native \\")
         print(f"    trt_model_path:={engine_path.absolute()}")
