@@ -94,7 +94,7 @@ RUN apt-get update && apt-get install -y \
 # Solution: Build cv_bridge and image_geometry from source against OpenCV 4.8.1.
 # This preserves CUDA acceleration while providing ROS2 compatibility.
 # ==============================================================================
-FROM dustynv/ros:humble-ros-base-l4t-${L4T_VERSION} AS jetson-base
+FROM dustynv/ros:humble-pytorch-l4t-${L4T_VERSION} AS jetson-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
