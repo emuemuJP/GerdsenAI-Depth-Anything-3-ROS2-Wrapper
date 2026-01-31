@@ -341,9 +341,17 @@ ENV ROS_DISTRO=humble
 ENV AMENT_PREFIX_PATH=/ros2_ws/install/depth_anything_3_ros2
 ENV PYTHONPATH=/ros2_ws/install/depth_anything_3_ros2/lib/python3.10/site-packages:${PYTHONPATH}
 
-# Source ROS2 workspace in bashrc
-RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
-    echo "source /ros2_ws/install/setup.bash" >> ~/.bashrc
+# Source ROS2 workspace in bashrc (both user and system-wide for docker exec)
+# NOTE: dustynv Jetson containers use /opt/ros/humble/install/setup.bash
+#       Standard OSRF containers use /opt/ros/humble/setup.bash
+#       We source both paths with fallback to support all base images
+RUN echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> ~/.bashrc && \
+    echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc && \
+    echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> /etc/bash.bashrc && \
+    echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> /etc/bash.bashrc && \
+    echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> /etc/profile.d/ros2.sh && \
+    echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> /etc/profile.d/ros2.sh && \
+    chmod +x /etc/profile.d/ros2.sh 2>/dev/null || true
 
 # Install PyYAML for setup_models.py
 RUN pip3 install --no-cache-dir pyyaml
