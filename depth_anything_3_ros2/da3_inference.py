@@ -95,22 +95,73 @@ class DA3InferenceWrapper:
             RuntimeError: If model loading fails
         """
         try:
-            # Import DepthAnything3 from the official package
-            from depth_anything_3.api import DepthAnything3
+            # Try loading via depth_anything_3.api first (full installation)
+            try:
+                from depth_anything_3.api import DepthAnything3
 
-            logger.info(f"Loading model '{self.model_name}' from Hugging Face Hub...")
-
-            # Load model with optional cache directory
-            if self.cache_dir:
-                self._model = DepthAnything3.from_pretrained(
-                    self.model_name, cache_dir=self.cache_dir
+                logger.info(
+                    f"Loading model '{self.model_name}' via DA3 API..."
                 )
-            else:
-                self._model = DepthAnything3.from_pretrained(self.model_name)
+                if self.cache_dir:
+                    self._model = DepthAnything3.from_pretrained(
+                        self.model_name, cache_dir=self.cache_dir
+                    )
+                else:
+                    self._model = DepthAnything3.from_pretrained(self.model_name)
+                self._model = self._model.to(device=self.device)
+                self._model.eval()
+                return
+            except ImportError:
+                logger.info(
+                    "DA3 API not available (missing optional deps), "
+                    "using direct model loading..."
+                )
 
-            # Move model to device
+            # Fallback: Load model directly without api module
+            # This avoids pycolmap/open3d dependencies
+            from huggingface_hub import hf_hub_download
+            from safetensors.torch import load_file
+            import json
+
+            logger.info(
+                f"Loading model '{self.model_name}' directly from HuggingFace..."
+            )
+
+            # Download config and weights
+            config_path = hf_hub_download(
+                repo_id=self.model_name,
+                filename="config.json",
+                cache_dir=self.cache_dir,
+            )
+            weights_path = hf_hub_download(
+                repo_id=self.model_name,
+                filename="model.safetensors",
+                cache_dir=self.cache_dir,
+            )
+
+            # Load config
+            with open(config_path) as f:
+                config = json.load(f)
+
+            # Import model class directly (avoids api.py)
+            from depth_anything_3.model.da3 import DepthAnything3Net
+
+            # Create model from config
+            self._model = DepthAnything3Net(
+                encoder=config.get("encoder", "vitl"),
+                features=config.get("features", 256),
+                out_channels=config.get("out_channels", [256, 512, 1024, 1024]),
+            )
+
+            # Load weights
+            state_dict = load_file(weights_path)
+            self._model.load_state_dict(state_dict)
+
+            # Move to device and set eval mode
             self._model = self._model.to(device=self.device)
-            self._model.eval()  # Set to evaluation mode
+            self._model.eval()
+
+            logger.info(f"Model loaded directly: {self.model_name}")
 
         except ImportError as e:
             raise RuntimeError(

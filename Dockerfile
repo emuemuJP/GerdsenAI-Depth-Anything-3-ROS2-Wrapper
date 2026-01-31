@@ -227,31 +227,40 @@ RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
     fi
 
 # Install PyTorch based on build type
+# For Jetson: Use NVIDIA wheels which require runtime CUDA/cuDNN libs (stub libs at build time)
 RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
     pip3 install torch torchvision \
     --index-url https://download.pytorch.org/whl/cu121; \
     elif [ "$BUILD_TYPE" = "jetson-base" ]; then \
-    # L4T r36.2.0 ships with CUDA 12.2
+    # L4T r36.2.0 ships with CUDA 12.2 and cuDNN 8.x
     # Download PyTorch wheel from NVIDIA (JetPack 6.0 / L4T r36.2.0)
     wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
     "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
     pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
-    rm /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
-    # Install torchvision compatible with torch 2.3.0
-    pip3 install --no-cache-dir torchvision==0.18.0; \
+    rm /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl; \
     else \
     pip3 install torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu \
     --ignore-installed sympy; \
     fi
 
-# Verify PyTorch installation (CUDA check deferred to runtime - no GPU during build)
+# For Jetson: Build torchvision from source to match NVIDIA PyTorch ABI
+# This is required because PyPI torchvision wheels don't match NVIDIA PyTorch's C++ ABI
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-    python3 -c "import torch; \
-    print(f'PyTorch {torch.__version__} installed successfully'); \
-    print(f'CUDA build: {torch.version.cuda}'); \
-    print('Note: torch.cuda.is_available() requires runtime GPU access')"; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg-dev zlib1g-dev libpython3-dev libopenblas-dev \
+    libavcodec-dev libavformat-dev libswscale-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone --depth 1 --branch v0.18.0 https://github.com/pytorch/vision.git /tmp/torchvision && \
+    cd /tmp/torchvision && \
+    TORCH_CUDA_ARCH_LIST="8.7" FORCE_CUDA=1 python3 setup.py bdist_wheel && \
+    pip3 install --no-cache-dir dist/*.whl && \
+    cd / && rm -rf /tmp/torchvision; \
     fi
+
+# NOTE: PyTorch import verification deferred to runtime
+# NVIDIA base images use stub libraries during Docker build
+# torch.cuda.is_available() only works at runtime with GPU access
 
 # Install other Python dependencies
 RUN pip3 install --no-cache-dir \
@@ -267,13 +276,19 @@ RUN pip3 install --no-cache-dir \
 # We manually install only the inference-required dependencies above.
 RUN pip3 install --no-cache-dir --no-deps \
     git+https://github.com/ByteDance-Seed/Depth-Anything-3.git && \
-    pip3 install --no-cache-dir einops
+    pip3 install --no-cache-dir einops addict omegaconf imageio moviepy==1.0.3 \
+    plyfile scipy trimesh matplotlib
 
 # Install TensorRT dependencies (Jetson only)
 # pycuda is required for TensorRT native inference
 # huggingface_hub is required for downloading ONNX models
+# onnxruntime-gpu must be installed from Jetson Zoo (no ARM64 wheels on PyPI)
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-    pip3 install --no-cache-dir pycuda huggingface_hub onnxruntime-gpu && \
+    pip3 install --no-cache-dir pycuda huggingface_hub && \
+    wget -q -O /tmp/onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl \
+    "https://nvidia.box.com/shared/static/6l0u97rj80ifwkk8rqbzj1try89fk26z.whl" && \
+    pip3 install --no-cache-dir /tmp/onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl && \
+    rm /tmp/onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl && \
     echo "TensorRT Python dependencies installed"; \
     fi
 
