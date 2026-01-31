@@ -18,36 +18,40 @@
 - [x] Confirmed TRT 8.6 cannot build DA3 (DINOv2/Einsum incompatibility)
 - [x] Validated TRT 10.3 builds DA3 successfully on host
 - [x] Fixed trtexec syntax for TRT 10.x (`--memPoolSize`, 5D shapes)
-- [x] Created `scripts/deploy_jetson.sh` for automated deployment
-- [x] Updated `docker-compose.yml` to mount host TRT 10.3
+- [x] Host inference validated at 29.8ms latency
 
 ---
 
-## Phase 2: Docker Integration [READY]
+## Phase 2: Host-Container Split Architecture [IN PROGRESS]
 
-**Approach:** Mount host TensorRT 10.3 into r36.2.0 container (r36.4.0 ROS+PyTorch image doesn't exist)
+**Problem:** Container TensorRT Python bindings are broken:
+- `dustynv/l4t-pytorch:r36.4.0` - TRT import fails ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714))
+- `dustynv/ros:humble-pytorch-l4t-r36.4.0` - Does not exist
+- Volume mounting TRT .so files works, but Python `tensorrt` module still broken
 
-### Deploy Command
-```bash
-bash scripts/deploy_jetson.sh
+**Solution:** Host-container split architecture
+
+```
+HOST (TRT 10.3)                    CONTAINER (ROS2)
++------------------+               +------------------+
+| TRT Inference    | <-- shared -> | ROS2 Node        |
+| Service (Python) |    memory     | - /image_raw sub |
+| - Loads engine   |               | - /depth pub     |
++------------------+               +------------------+
 ```
 
-### What it does:
-1. Verifies host TRT 10.3
-2. Downloads ONNX model if missing  
-3. Builds engine with host trtexec (~2 min)
-4. Starts container with mounted TRT libs + engine
+### Files to Create (Claude Code)
+- [ ] `scripts/trt_inference_service.py` - Host TRT service
+- [ ] Update `da3_inference.py` - Add SharedMemoryInference class
+- [ ] Update `deploy_jetson.sh` - Start host service + container
 
-### Volume Mounts (docker-compose.yml)
-```yaml
-# Host TensorRT 10.3
-- /usr/lib/aarch64-linux-gnu/libnvinfer.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvinfer.so.10:ro
-- /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10:ro
-- /usr/lib/aarch64-linux-gnu/libnvonnxparser.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvonnxparser.so.10:ro
-- /usr/src/tensorrt:/usr/src/tensorrt:ro
-# Pre-built engine
-- ./models/tensorrt:/app/models/tensorrt:rw
-```
+### Communication Protocol
+| File | Direction | Format |
+|------|-----------|--------|
+| `/tmp/da3_shared/input.npy` | Container -> Host | float32 [1,1,3,518,518] |
+| `/tmp/da3_shared/output.npy` | Host -> Container | float32 [1,518,518] |
+| `/tmp/da3_shared/request.flag` | Container -> Host | Signal file |
+| `/tmp/da3_shared/ready.flag` | Host -> Container | Signal file |
 
 ---
 
@@ -61,7 +65,7 @@ bash scripts/deploy_jetson.sh
 
 ---
 
-## Phase 4: Thermal Validation [PENDING]
+## Phase 4: Thermal/Stability Validation [PENDING]
 
 - [ ] 10-minute sustained load test
 - [ ] GPU temp monitoring (<80C target)
@@ -69,26 +73,12 @@ bash scripts/deploy_jetson.sh
 
 ---
 
-## Root Cause: Why TRT 8.6 Fails
+## Root Cause Summary
 
-DA3's DINOv2 backbone uses `F.scaled_dot_product_attention()` which exports as Einsum ops. TRT 8.6 cannot handle:
-- Einsum with >2 inputs
-- Missing ViT/MHA optimizations
-- "caskConvolutionV2Forward" format errors
-
-**Solution:** TRT 10.3+ has full DINOv2 support.
-
----
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `scripts/deploy_jetson.sh` | One-command deployment |
-| `scripts/test_trt10.3_host.sh` | Host TRT validation |
-| `models/onnx/da3-small-embedded.onnx` | ONNX model (101MB) |
-| `models/tensorrt/da3-small-fp16.engine` | TRT engine (58MB) |
-| `docs/JETSON_DEPLOYMENT_GUIDE.md` | Full documentation |
+1. **TRT 8.6 fails** - DA3's DINOv2 uses Einsum ops TRT 8.6 can't compile
+2. **TRT 10.3 works** - Validated on host at 29.8ms
+3. **Container Python TRT broken** - `dustynv/l4t-pytorch:r36.4.0` has import error
+4. **Solution** - Run TRT inference on host, ROS2 in container, communicate via shared memory
 
 ---
 
