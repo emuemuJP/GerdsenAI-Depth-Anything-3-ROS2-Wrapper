@@ -10,13 +10,52 @@ set -e
 echo "=== TensorRT 10.3 Host Validation ==="
 echo ""
 
+# Step 0: Find trtexec
+TRTEXEC=""
+if [ -x "/usr/src/tensorrt/bin/trtexec" ]; then
+    TRTEXEC="/usr/src/tensorrt/bin/trtexec"
+elif command -v trtexec &> /dev/null; then
+    TRTEXEC=$(command -v trtexec)
+else
+    echo "ERROR: trtexec not found"
+    echo "  Expected at: /usr/src/tensorrt/bin/trtexec"
+    echo "  This script must run on Jetson with TensorRT installed"
+    exit 1
+fi
+echo "Using trtexec: $TRTEXEC"
+echo ""
+
 # Step 1: Verify TensorRT version
 echo "Step 1: Checking TensorRT version..."
-TRT_VERSION=$(/usr/src/tensorrt/bin/trtexec --version 2>&1 | grep -oP 'TensorRT \K[0-9.]+' || echo "NOT_FOUND")
+
+# Get raw trtexec output for debugging
+TRTEXEC_OUTPUT=$($TRTEXEC --help 2>&1 | head -5)
+echo "  trtexec header: $(echo "$TRTEXEC_OUTPUT" | grep -i tensorrt | head -1)"
+
+# TRT 10.x shows version in format: [TensorRT v100300] meaning 10.03.00
+# Extract from the help/version output
+TRT_VERSION_RAW=$($TRTEXEC --help 2>&1 | grep -oE 'TensorRT v[0-9]+' | head -1 || echo "")
+if [ -n "$TRT_VERSION_RAW" ]; then
+    # Convert v100300 to 10.3
+    VERSION_NUM=$(echo "$TRT_VERSION_RAW" | grep -oE '[0-9]+')
+    MAJOR=$((VERSION_NUM / 10000))
+    MINOR=$(((VERSION_NUM % 10000) / 100))
+    TRT_VERSION="${MAJOR}.${MINOR}"
+else
+    # Fallback: try direct version extraction
+    TRT_VERSION=$($TRTEXEC --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "NOT_FOUND")
+fi
 echo "  TensorRT version: $TRT_VERSION"
 
-if [[ "$TRT_VERSION" != 10.3* ]]; then
-    echo "  WARNING: Expected TRT 10.3.x, got $TRT_VERSION"
+# Default to TRT 10.x syntax if detection fails (we know Jetson has TRT 10.3)
+USE_TRT10_SYNTAX=true
+if [[ "$TRT_VERSION" =~ ^[89]\. ]]; then
+    echo "  Detected TRT 8.x/9.x - using legacy syntax"
+    USE_TRT10_SYNTAX=false
+elif [[ "$TRT_VERSION" =~ ^10\. ]]; then
+    echo "  Detected TRT 10.x - using modern syntax"
+else
+    echo "  WARNING: Could not detect version, assuming TRT 10.x"
 fi
 echo ""
 
@@ -56,13 +95,29 @@ echo "Step 3: Building TensorRT engine (this may take 1-2 minutes)..."
 OUTPUT_ENGINE="/tmp/da3-trt10.3-test.engine"
 
 echo "  Running trtexec..."
+echo "  Input: $ONNX_PATH"
+echo "  Output: $OUTPUT_ENGINE"
+echo ""
+
 # NOTE: TRT 10.x uses --memPoolSize instead of --workspace
-/usr/src/tensorrt/bin/trtexec \
-    --onnx="$ONNX_PATH" \
-    --saveEngine="$OUTPUT_ENGINE" \
-    --fp16 \
-    --memPoolSize=workspace:2048MiB \
-    --verbose 2>&1 | tee /tmp/trtexec_build.log
+# Dynamic input shapes handled with --minShapes/--optShapes/--maxShapes if needed
+if [ "$USE_TRT10_SYNTAX" = true ]; then
+    echo "  Using TRT 10.x syntax (--memPoolSize)"
+    $TRTEXEC \
+        --onnx="$ONNX_PATH" \
+        --saveEngine="$OUTPUT_ENGINE" \
+        --fp16 \
+        --memPoolSize=workspace:2048MiB \
+        --verbose 2>&1 | tee /tmp/trtexec_build.log
+else
+    echo "  Using TRT 8.x syntax (--workspace)"
+    $TRTEXEC \
+        --onnx="$ONNX_PATH" \
+        --saveEngine="$OUTPUT_ENGINE" \
+        --fp16 \
+        --workspace=2048 \
+        --verbose 2>&1 | tee /tmp/trtexec_build.log
+fi
 
 # Check for success
 echo ""
