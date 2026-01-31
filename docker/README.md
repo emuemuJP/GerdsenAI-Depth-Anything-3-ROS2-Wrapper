@@ -307,25 +307,65 @@ For NVIDIA Jetson devices (Orin AGX, Orin NX, Orin Nano):
 
 ### Prerequisites
 
-- JetPack 6.0+ (L4T r36.2.0+)
+- JetPack 6.2+ (L4T r36.4.x) with TensorRT 10.3 for optimal performance
 - Docker with NVIDIA container runtime
 - ~15GB disk space for the built image
 
-### Quick Start (Jetson)
+### Quick Start (Jetson) - Host-Container Split Mode (Recommended)
+
+The recommended deployment uses a host-container split architecture:
+- **Host**: Runs TensorRT 10.3 inference service (35 FPS)
+- **Container**: Runs ROS2 node with PyTorch fallback
+
+This approach achieves 6.8x speedup over container-only PyTorch inference.
 
 ```bash
 # Clone and enter repository (on Jetson)
 git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
 cd GerdsenAI-Depth-Anything-3-ROS2-Wrapper
 
-# Build the Jetson image (takes ~45 minutes)
+# Deploy with host-container split (builds engine + starts TRT service)
+bash scripts/deploy_jetson.sh --host-trt
+
+# The script will:
+# 1. Check TensorRT 10.3 on host
+# 2. Download ONNX model from HuggingFace
+# 3. Build TensorRT FP16 engine (~2 min)
+# 4. Start host TRT inference service
+# 5. Launch Docker container
+
+# Inside container (ROS2 is auto-sourced):
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
+  image_topic:=/camera/image_raw
+```
+
+### Architecture (Host-Container Split)
+
+```
+[Container: ROS2 Node] <-- /tmp/da3_shared --> [Host: TRT Service]
+      |                                              |
+      v                                              v
+/image_raw (sub)                           TRT 10.3 engine
+/depth (pub)                               ~35 FPS inference
+```
+
+The container writes preprocessed images to shared memory, the host TRT service processes them, and writes depth maps back. This avoids TensorRT version mismatch issues (container base image has TRT 8.6, host has TRT 10.3).
+
+### Container-Only Mode (Fallback)
+
+If TensorRT is not needed or unavailable, use PyTorch inference:
+
+```bash
+# Build the Jetson image (~45 minutes)
 docker compose build depth-anything-3-jetson
 
 # Run the container
 docker compose up -d depth-anything-3-jetson
-docker exec -it da3_jetson bash
 
-# Inside container: test inference
+# Enter the container (ROS2 is auto-sourced)
+docker exec -it da3_ros2_jetson bash
+
+# Inside container: test inference (~5 FPS with PyTorch)
 ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw \
   model_name:=depth-anything/DA3-SMALL \
@@ -349,11 +389,12 @@ scp -r . user@jetson-ip:~/depth_anything_3_ros2/
 
 | Component | Requirement | Notes |
 |-----------|-------------|-------|
-| **Base Image** | `dustynv/ros:humble-ros-base-l4t-r36.2.0` | No NGC auth required |
+| **Base Image** | `dustynv/ros:humble-pytorch-l4t-r36.2.0` | No NGC auth required |
 | **torchvision** | Build from source | NVIDIA wheel ABI mismatch |
 | **cv_bridge** | Build from source | OpenCV version conflict |
 | **pycolmap/evo** | Runtime patched | No ARM64 wheels |
 | **Final Image Size** | ~14.9GB | Includes PyTorch, ROS2, models |
+| **Host TensorRT** | 10.3+ (JetPack 6.2+) | For host-container split mode |
 
 ### Validated Performance
 
@@ -365,20 +406,26 @@ Measured on Jetson Orin NX 16GB (2026-01-31):
 | TensorRT FP16 | DA3-SMALL | 518x518 | 35.3 | 26.4ms median | 6.8x | Validated |
 
 **TensorRT Validation Details:**
-- Platform: Jetson Orin NX 16GB
-- Base image: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
-- TensorRT: 10.3
+- Platform: Jetson Orin NX 16GB (JetPack 6.2, L4T r36.4.0)
+- TensorRT: 10.3 (host)
 - Engine size: 58MB
-- Validation: Phase 1 complete (host script)
-- Docker integration: Phase 2 in progress
+- Input shape: 1x1x3x518x518 (5D tensor)
+- Architecture: Host-container split
 
-**To enable TensorRT:**
+### Deploy Script Options
+
 ```bash
-# Rebuild Docker image with L4T r36.4.0 base
-docker compose build depth-anything-3-jetson
+# Full deployment (build engine + start container)
+bash scripts/deploy_jetson.sh --host-trt
 
-# Run with auto TensorRT engine build
-DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+# Build TensorRT engine only (no container)
+bash scripts/deploy_jetson.sh --build-only
+
+# Start container only (skip engine build)
+bash scripts/deploy_jetson.sh --run-only --host-trt
+
+# Show help
+bash scripts/deploy_jetson.sh --help
 ```
 
 ### Manual Build (Alternative)
