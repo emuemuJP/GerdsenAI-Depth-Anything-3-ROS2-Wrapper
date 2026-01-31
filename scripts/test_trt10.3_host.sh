@@ -100,7 +100,11 @@ echo "  Output: $OUTPUT_ENGINE"
 echo ""
 
 # NOTE: TRT 10.x uses --memPoolSize instead of --workspace
-# Dynamic input shapes handled with --minShapes/--optShapes/--maxShapes if needed
+# DA3 ONNX model has 5D dynamic input shape - must specify explicitly
+# Input tensor name: pixel_values, shape: batch x 1 x channels x height x width
+INPUT_SHAPE="pixel_values:1x1x3x518x518"
+echo "  Input shape: $INPUT_SHAPE"
+
 if [ "$USE_TRT10_SYNTAX" = true ]; then
     echo "  Using TRT 10.x syntax (--memPoolSize)"
     $TRTEXEC \
@@ -108,6 +112,7 @@ if [ "$USE_TRT10_SYNTAX" = true ]; then
         --saveEngine="$OUTPUT_ENGINE" \
         --fp16 \
         --memPoolSize=workspace:2048MiB \
+        --optShapes="$INPUT_SHAPE" \
         --verbose 2>&1 | tee /tmp/trtexec_build.log
 else
     echo "  Using TRT 8.x syntax (--workspace)"
@@ -116,6 +121,7 @@ else
         --saveEngine="$OUTPUT_ENGINE" \
         --fp16 \
         --workspace=2048 \
+        --optShapes="$INPUT_SHAPE" \
         --verbose 2>&1 | tee /tmp/trtexec_build.log
 fi
 
