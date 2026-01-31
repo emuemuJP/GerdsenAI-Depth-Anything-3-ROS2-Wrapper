@@ -43,7 +43,7 @@ This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), provi
 - **Docker Support**: Pre-configured Docker and Docker Compose files
 - **Example Images**: Sample test images and benchmark scripts included
 - **Performance Profiling**: Built-in benchmarking and profiling tools
-- **TensorRT Support**: Optimization scripts for NVIDIA Jetson platforms (currently blocked by opset incompatibility - see [TensorRT Status](#tensorrt-status))
+- **TensorRT Support**: Optimization scripts for NVIDIA Jetson platforms (requires Docker image rebuild - see [TensorRT Status](#tensorrt-status))
 - **Post-Processing**: Depth map filtering, hole filling, and enhancement
 - **INT8 Quantization**: Model compression for faster inference
 - **ONNX Export**: Deploy to various platforms and runtimes
@@ -950,18 +950,22 @@ Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 
 ### TensorRT Status
 
-TensorRT native acceleration is currently **blocked**:
+TensorRT acceleration is now available via Docker image update:
 
-- **Issue**: TensorRT 8.6.2 (bundled with JetPack 6.0) supports max ONNX opset 17
-- **DA3 Models**: Export with opset 18+ (incompatible)
-- **Result**: TensorRT native acceleration not available
+- **Previous Issue**: TensorRT 8.6.2 (L4T r36.2.0) incompatible with DINOv2/Einsum ops
+- **Solution**: Docker image updated to L4T r36.4.0 (TensorRT 10.3)
+- **Status**: Ready for testing - rebuild Docker image to enable
 
-**Workarounds under investigation**:
-1. ONNX Runtime with CUDA EP (functional but slower than TRT)
-2. Re-export models with opset 17 from PyTorch source
-3. Wait for JetPack update with TensorRT 10+ support
+**To enable TensorRT:**
+```bash
+# Rebuild with new base image
+docker compose build depth-anything-3-jetson
 
-For now, use PyTorch inference. Performance improvements are tracked in [TODO.md](TODO.md).
+# Run with auto TensorRT engine build
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
+
+See [TODO.md](TODO.md) for test instructions and expected results.
 
 ### Performance Targets (Future)
 

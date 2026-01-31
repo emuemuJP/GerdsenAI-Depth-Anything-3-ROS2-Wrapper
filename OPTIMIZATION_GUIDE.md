@@ -4,22 +4,26 @@ This guide explains how to achieve >30 FPS performance with 1080p depth and conf
 
 ---
 
-## IMPORTANT: TensorRT Status (2026-01-30)
+## TensorRT Status (2026-01-30)
 
-**TensorRT native acceleration is currently BLOCKED.**
+**TensorRT acceleration is now available via Docker image update.**
 
-| Issue | Details |
-|-------|---------|
-| **Root Cause** | TensorRT 8.6.2 (JetPack 6.0) only supports ONNX opset 17 |
-| **DA3 Models** | Export with opset 18+ (incompatible) |
-| **Current Workaround** | Use PyTorch inference (~5.2 FPS on Orin NX 16GB) |
+| Component | Previous (L4T r36.2.0) | Current (L4T r36.4.0) |
+|-----------|------------------------|----------------------|
+| TensorRT | 8.6.2 (incompatible) | **10.3** (compatible) |
+| CUDA | 12.2 | 12.6 |
+| cuDNN | 8.9 | 9.3 |
 
-**Workaround Options** (under investigation):
-1. Use ONNX Runtime with CUDA Execution Provider (not TRT EP)
-2. Re-export DA3 with opset 17 from PyTorch source
-3. Upgrade to TensorRT 10+ (requires JetPack upgrade when available)
+**Root Cause (Resolved)**: TensorRT 8.6 could not compile DINOv2's Einsum operations. TensorRT 10.3 has enhanced ViT/MHA support.
 
-The TensorRT sections below document the **intended** optimization path once opset compatibility is resolved.
+**To enable TensorRT:**
+```bash
+# Rebuild Docker image with new base
+docker compose build depth-anything-3-jetson
+
+# Run with auto TensorRT engine build
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
 
 ---
 
@@ -40,11 +44,11 @@ Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0, CUDA 12.2):
 - **Target FPS**: >30 FPS sustained
 - **Platform**: NVIDIA Jetson Orin AGX 64GB
 
-## Quick Start (Currently Available - PyTorch)
+## Quick Start
 
-### Option 1: PyTorch FP32 (Current Baseline) - ~5 FPS
+### Option 1: PyTorch FP32 (Baseline) - ~5 FPS
 
-Currently functional on Jetson. No TensorRT acceleration available yet:
+Works out of the box, no TensorRT engine build required:
 
 ```bash
 # Configure your webcam for 1080p MJPEG
@@ -62,11 +66,9 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   model_input_width:=384
 ```
 
-### Option 2: TensorRT FP16 (BLOCKED - Future) - >30 FPS Target
+### Option 2: TensorRT FP16 (Recommended) - >30 FPS Target
 
-**NOTE: Currently blocked due to ONNX opset 18 incompatibility with TensorRT 8.6.2.**
-
-When available, requires one-time model conversion:
+Requires Docker image rebuild and one-time model conversion:
 
 ```bash
 # Step 1: Build TensorRT engine with auto-detection (recommended)
@@ -86,9 +88,9 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_308x308_*.engine
 ```
 
-### Option 3: Docker Deployment (PyTorch Only Currently)
+### Option 3: Docker Deployment (Recommended)
 
-Build and run with PyTorch inference (TensorRT auto-build blocked):
+Build with L4T r36.4.0 base and run with automatic TensorRT engine building:
 
 ```bash
 # Build the Jetson image
@@ -394,9 +396,9 @@ Tested on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 |--------------|-------------|---------|-----|----------------|-------|
 | **Current Baseline** | 518x518 | PyTorch FP32 | ~5.2 | ~193ms | Functional |
 
-### Expected Results (TensorRT - Future)
+### Expected Results (TensorRT 10.3)
 
-Once TensorRT opset compatibility is resolved:
+With L4T r36.4.0 Docker image (TensorRT 10.3):
 
 | Configuration | Model Input | Backend | FPS (Expected) | Quality |
 |--------------|-------------|---------|----------------|---------|
@@ -405,7 +407,7 @@ Once TensorRT opset compatibility is resolved:
 | TensorRT FP16 | 518x518 | TensorRT FP16 | ~25-32 FPS | Excellent |
 | Memory Optimized | 308x308 | TensorRT FP16 | ~35-40 FPS | Good |
 
-### Platform-Specific Recommendations (Future - TensorRT)
+### Platform-Specific Recommendations (TensorRT 10.3)
 
 | Platform | Model | Resolution | Precision | Expected FPS |
 |----------|-------|------------|-----------|--------------|
@@ -416,7 +418,7 @@ Once TensorRT opset compatibility is resolved:
 | AGX Orin 32GB | da3-base | 518 | FP16 | ~40-50 |
 | AGX Orin 64GB | da3-large | 518 | FP16 | ~45-50+ |
 
-**Note**: These are projected values based on typical TensorRT speedups. Actual performance depends on opset compatibility resolution.
+**Note**: Requires Docker image rebuild with L4T r36.4.0 base.
 
 ## Quality Comparison
 
