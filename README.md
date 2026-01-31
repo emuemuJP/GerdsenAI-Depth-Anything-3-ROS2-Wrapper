@@ -43,7 +43,7 @@ This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), provi
 - **Docker Support**: Pre-configured Docker and Docker Compose files
 - **Example Images**: Sample test images and benchmark scripts included
 - **Performance Profiling**: Built-in benchmarking and profiling tools
-- **TensorRT Support**: Optimization scripts for NVIDIA Jetson platforms (requires Docker image rebuild - see [TensorRT Status](#tensorrt-status))
+- **TensorRT Support**: Validated 6.8x speedup on Jetson (35.3 FPS) - see [TensorRT Status](#tensorrt-status-validated)
 - **Post-Processing**: Depth map filtering, hole filling, and enhancement
 - **INT8 Quantization**: Model compression for faster inference
 - **ONNX Export**: Deploy to various platforms and runtimes
@@ -946,35 +946,79 @@ Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 |-------|---------|------------|-----|----------------|
 | DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
 
-**Note**: TensorRT acceleration is not yet available due to ONNX opset incompatibility. See [TensorRT Status](#tensorrt-status) below.
+**Update (2026-01-31)**: TensorRT acceleration now validated with 6.8x speedup. See [TensorRT Status](#tensorrt-status-validated) below.
 
-### TensorRT Status
+### TensorRT Status: VALIDATED (Host-Container Split)
 
-TensorRT acceleration has been validated on Jetson Orin NX 16GB:
+TensorRT acceleration validated on Jetson Orin NX 16GB with **6.8x speedup** (35.3 FPS vs 5.2 FPS baseline).
 
-- **Previous Issue**: TensorRT 8.6.2 (L4T r36.2.0) incompatible with DINOv2/Einsum ops
-- **Solution**: Docker image updated to L4T r36.4.0 (TensorRT 10.3)
-- **Status**: Validated - performance verified
+#### Architecture: Host-Container Split
 
-**Validated Performance (2026-01-31):**
-- Platform: Jetson Orin NX 16GB
-- TensorRT Version: 10.3
-- Model: DA3-SMALL at 518x518 FP16
-- Throughput: 35.3 FPS
-- GPU Latency: 26.4ms median (25.5ms min)
-- Engine Size: 58MB
-- Speedup: 6.8x over PyTorch baseline (~5.2 FPS)
+Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv/jetson-containers#714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture:
 
-**To enable TensorRT:**
-```bash
-# Rebuild with new base image
-docker compose build depth-anything-3-jetson
-
-# Run with auto TensorRT engine build
-DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
++----------------------------------------------------------+
+|                    HOST (JetPack 6.2+)                   |
+|  +----------------------------------------------------+  |
+|  |        TRT Inference Service (Python)              |  |
+|  |  - Loads engine with host TensorRT 10.3            |  |
+|  |  - Watches /tmp/da3_shared/ for input frames       |  |
+|  |  - Writes depth output to shared memory            |  |
+|  +----------------------------------------------------+  |
+|                          ^                               |
+|                          | shared memory                 |
+|                          v                               |
+|  +----------------------------------------------------+  |
+|  |           Docker Container (L4T r36.2.0)           |  |
+|  |  - ROS2 Humble + PyTorch                           |  |
+|  |  - Subscribes /image_raw, publishes /depth         |  |
+|  |  - Communicates with host TRT service              |  |
+|  +----------------------------------------------------+  |
++----------------------------------------------------------+
 ```
 
-See [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md) for detailed performance data.
+**Why this approach:**
+- `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
+- `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
+- Container TRT 8.6 cannot build DA3 engines (DINOv2 incompatibility)
+- Host TRT 10.3 works perfectly (validated at 29.8ms latency)
+
+#### Validated Performance (2026-01-31)
+
+| Metric | Value |
+|--------|-------|
+| Platform | Jetson Orin NX 16GB |
+| JetPack | 6.2.1 (L4T R36.4.7) |
+| TensorRT | 10.3.0.30 (host) |
+| Model | DA3-SMALL @ 518x518 FP16 |
+| Throughput | 35.3 FPS |
+| Latency (median) | 26.4ms |
+| Engine Size | 58MB |
+| Speedup | 6.8x vs PyTorch |
+
+#### Quick Start
+
+```bash
+cd ~/depth_anything_3_ros2
+bash scripts/deploy_jetson.sh
+```
+
+This script:
+1. Verifies TensorRT 10.3 on host
+2. Downloads ONNX model if missing
+3. Builds TensorRT FP16 engine (~2 min)
+4. Starts host inference service
+5. Starts container with shared memory mount
+
+#### Key Files
+
+| File | Purpose |
+|------|--------|
+| `scripts/trt_inference_service.py` | Host-side TRT inference service |
+| `scripts/deploy_jetson.sh` | Automated deployment |
+| `depth_anything_3_ros2/da3_inference.py` | Inference wrapper (shared memory) |
+
+See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for complete documentation.
 
 ### Validated TensorRT Performance
 
