@@ -45,7 +45,7 @@ Due to broken TensorRT Python bindings in available Jetson containers ([Issue #7
 - `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
 - `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
 - Container TRT 8.6.2 cannot build DA3 engines (DINOv2 incompatibility)
-- Host TRT 10.3 works perfectly (validated at 29.8ms latency)
+- Host TRT 10.3 works perfectly (validated at 26.4ms latency)
 
 ---
 
@@ -53,7 +53,7 @@ Due to broken TensorRT Python bindings in available Jetson containers ([Issue #7
 
 ```bash
 cd ~/depth_anything_3_ros2
-bash scripts/deploy_jetson.sh
+bash scripts/deploy_jetson.sh --host-trt
 ```
 
 This script:
@@ -119,7 +119,7 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py use_shared_memory:=
 | Metric | Value |
 |--------|-------|
 | Throughput | 35.3 FPS |
-| Latency (median) | 26.7 ms |
+| Latency (median) | 26.4 ms |
 | Latency (p95) | 33.3 ms |
 | GPU Temp | 44-45C |
 | Speedup | 6.8x vs PyTorch |
