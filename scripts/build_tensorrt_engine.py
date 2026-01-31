@@ -338,7 +338,7 @@ def build_tensorrt_engine(
         trtexec,
         f"--onnx={onnx_path}",
         f"--saveEngine={output_path}",
-        f"--workspace={max_workspace_mb}",
+        f"--memPoolSize=workspace:{max_workspace_mb}MiB",
     ]
 
     # Set precision flags
