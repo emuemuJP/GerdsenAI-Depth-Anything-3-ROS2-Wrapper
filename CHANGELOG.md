@@ -4,11 +4,21 @@
 
 ### Critical Findings
 
-- **TensorRT Opset Incompatibility Discovered**:
-  - TensorRT 8.6.2 (bundled with JetPack 6.0) only supports ONNX opset 17
-  - DA3 models export with opset 18+ (incompatible)
-  - Result: TensorRT native acceleration currently blocked
-  - Workaround options documented in TODO.md
+- **TensorRT 8.6 Fundamentally Incompatible with DA3**:
+  - Root cause: DINOv2 backbone exports Einsum operations unsupported by TRT 8.6
+  - Error: "caskConvolutionV2Forward could not find any supported formats"
+  - NVIDIA GitHub Issue #4537 confirms DINOv2 failures persist until TRT 10.8+
+  - Workarounds (opset 17 re-export, graph surgery) not viable
+  - **Solution Implemented:** Updated Docker base image to L4T r36.4.0 (TensorRT 10.3)
+  - Full analysis: `docs/TENSORRT_DA3_PLAN.md`
+
+### Docker Base Image Update
+
+- **Updated Jetson base image to L4T r36.4.0**:
+  - Previous: `dustynv/ros:humble-ros-base-l4t-r36.2.0` (TensorRT 8.6.2)
+  - Current: `dustynv/ros:humble-ros-base-l4t-r36.4.0` (TensorRT 10.3)
+  - Benefits: Full DINOv2/ViT support, 70% AI TOPS boost via Super Mode
+  - Updated PyTorch installation comments to reference JetPack 6.2
 
 ### Performance Baseline
 

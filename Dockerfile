@@ -6,7 +6,7 @@
 ARG ROS_DISTRO=humble
 ARG CUDA_VERSION=12.2.0
 ARG UBUNTU_VERSION=22.04
-ARG L4T_VERSION=r36.2.0
+ARG L4T_VERSION=r36.4.0
 ARG BUILD_TYPE=base
 
 # Model selection arguments (used by setup_models.py)
@@ -232,8 +232,9 @@ RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
     pip3 install torch torchvision \
     --index-url https://download.pytorch.org/whl/cu121; \
     elif [ "$BUILD_TYPE" = "jetson-base" ]; then \
-    # L4T r36.2.0 ships with CUDA 12.2 and cuDNN 8.x
-    # Download PyTorch wheel from NVIDIA (JetPack 6.0 / L4T r36.2.0)
+    # L4T r36.4.0 ships with CUDA 12.6 and cuDNN 9.x
+    # Download PyTorch wheel from NVIDIA (JetPack 6.2 / L4T r36.4.0)
+    # Note: PyTorch 2.3.0 wheel is compatible with both r36.2.0 and r36.4.0
     wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
     "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
     pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \

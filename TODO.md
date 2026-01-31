@@ -4,48 +4,64 @@
 
 **Current State:** PyTorch inference @ ~5.2 FPS (193ms latency) on Jetson Orin NX 16GB
 **Target:** TensorRT FP16 @ >20 FPS (preferably >30 FPS) at 518x518 resolution
-**Status:** TensorRT BLOCKED - opset incompatibility discovered
+**Solution:** Upgrade to JetPack 6.2 (TensorRT 10.3)
 
 ---
 
-## Critical Discovery: TensorRT Opset Incompatibility
+## Root Cause Analysis
 
-### Issue Details
+### Why TensorRT 8.6 Cannot Build DA3 Engines
 
-| Aspect | Details |
-|--------|---------|
-| **Problem** | TensorRT 8.6.2 (JetPack 6.0) supports max ONNX opset 17 |
-| **DA3 Models** | Export with opset 18+ |
-| **Result** | Native TensorRT acceleration blocked |
-| **Discovered** | 2026-01-30 |
+The DINOv2 backbone at DA3's core uses `F.scaled_dot_product_attention()` which exports to ONNX as complex Einsum operations. TensorRT 8.6 has fundamental limitations:
 
-### Workaround Options (Under Investigation)
+| Limitation | Impact |
+|------------|--------|
+| **Einsum restrictions** | TRT 8.6 does not support >2 inputs, ellipsis notation, or diagonal operations |
+| **Missing ViT optimizations** | No Multi-Head Attention fusion for Vision Transformers |
+| **Format incompatibility** | "caskConvolutionV2Forward" error - no compatible CUDA kernels |
 
-1. **ONNX Runtime with CUDA EP** - Use CUDA execution provider instead of TRT EP
-2. **Re-export with opset 17** - Rebuild DA3 models from PyTorch source with lower opset
-3. **Wait for JetPack upgrade** - TensorRT 10+ supports higher opsets
+**Confirmed:** NVIDIA TensorRT GitHub Issue #4537 documents these DINOv2 compilation failures. Full fixes arrived in TensorRT 10.8+.
+
+### Solution: JetPack 6.2 Upgrade
+
+| Component | JetPack 6.0 (Current) | JetPack 6.2 (Target) |
+|-----------|----------------------|---------------------|
+| TensorRT | 8.6 | **10.3** |
+| CUDA | 12.2 | 12.6 |
+| cuDNN | 8.9 | 9.3 |
+| ViT Support | Limited | Enhanced MHA fusion |
+| Bonus | - | 70% AI TOPS boost (Super Mode) |
+
+**Upgrade Command:**
+```bash
+sudo apt-add-repository universe
+sudo apt-add-repository multiverse
+sudo apt-get update
+sudo apt-get install nvidia-jetpack
+sudo reboot
+```
+
+**Documentation:** See `docs/TENSORRT_DA3_PLAN.md` for full analysis.
 
 ---
 
-## Phase 1: TensorRT Validation [BLOCKED]
+## Phase 1: TensorRT Validation [READY TO TEST]
 
 **Goal:** Confirm TensorRT pipeline works end-to-end
-**Status:** BLOCKED by opset incompatibility
+**Status:** Dockerfile updated - ready for rebuild and test
 **Started:** 2026-01-30 22:10 CST
 
-### Completed Checks
-- [x] Verify TensorRT Environment: TensorRT 8.6.2 confirmed
-- [x] Verify `trtexec` available
-- [x] Confirm JetPack 6.x: L4T r36.2.0
+### Completed Steps
+- [x] Verify TensorRT Environment: TensorRT 8.6.2 confirmed on host
+- [x] Identify root cause: Docker base image using L4T r36.2.0 (TRT 8.6)
+- [x] Update Dockerfile: Changed to L4T r36.4.0 (TRT 10.3)
 - [x] Created deployment guide: `docs/JETSON_DEPLOYMENT_GUIDE.md`
+- [x] Created research analysis: `docs/TENSORRT_DA3_PLAN.md`
 
-### Blocked Items
-- [ ] Build TensorRT engine - fails due to opset 18 operators
-- [ ] Verify FPS improvement - blocked by above
-
-**Root Cause:**
-- Opset incompatibility confirmed (not the 5% risk scenario - it's 100%)
-- DA3 models use opset 18 features not available in TensorRT 8.6.2
+### Next Steps
+- [ ] Rebuild Docker image with new base
+- [ ] Test TensorRT engine build (should succeed with TRT 10.3)
+- [ ] Verify FPS improvement
 
 ---
 
