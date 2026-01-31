@@ -46,6 +46,7 @@ OUTPUT_PATH = SHARED_DIR / "output.npy"
 LOCK_PATH = SHARED_DIR / "lock"
 STATUS_PATH = SHARED_DIR / "status"
 REQUEST_PATH = SHARED_DIR / "request"
+STATS_PATH = SHARED_DIR / "stats"
 
 
 class TRTLogger(trt.ILogger):
@@ -234,6 +235,10 @@ class InferenceService:
         """Write status to file."""
         STATUS_PATH.write_text(status)
 
+    def _write_stats(self, fps: float, latency_ms: float, frames: int):
+        """Write stats to file for performance monitor."""
+        STATS_PATH.write_text(f"{fps:.2f},{latency_ms:.2f},{frames}")
+
     def _acquire_lock(self) -> int:
         """Acquire file lock for synchronization."""
         fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_RDWR)
@@ -305,7 +310,8 @@ class InferenceService:
         print(f"\nService running. Waiting for requests...")
         print(f"Press Ctrl+C to stop.\n")
 
-        last_stats_time = time.time()
+        last_stats_write = time.time()
+        last_stats_print = time.time()
 
         while self.running:
             processed = self.process_request()
@@ -313,16 +319,24 @@ class InferenceService:
             if not processed:
                 time.sleep(self.poll_interval)
 
-            # Print stats every 5 seconds
             now = time.time()
-            if now - last_stats_time > 5.0 and self.stats["frames"] > 0:
+            if self.stats["frames"] > 0:
                 avg_time = self.stats["total_time"] / self.stats["frames"]
                 fps = 1.0 / avg_time if avg_time > 0 else 0
-                print(
-                    f"Stats: {self.stats['frames']} frames, "
-                    f"avg {avg_time*1000:.1f}ms ({fps:.1f} FPS)"
-                )
-                last_stats_time = now
+                latency_ms = avg_time * 1000
+
+                # Write stats for performance monitor every second
+                if now - last_stats_write > 1.0:
+                    self._write_stats(fps, latency_ms, self.stats["frames"])
+                    last_stats_write = now
+
+                # Print to console every 5 seconds
+                if now - last_stats_print > 5.0:
+                    print(
+                        f"Stats: {self.stats['frames']} frames, "
+                        f"avg {latency_ms:.1f}ms ({fps:.1f} FPS)"
+                    )
+                    last_stats_print = now
 
     def stop(self):
         """Stop the service."""
