@@ -303,15 +303,83 @@ docker run --network host ...
 
 ## Jetson Deployment
 
-For NVIDIA Jetson devices (Orin AGX, Xavier, Nano):
+For NVIDIA Jetson devices (Orin AGX, Orin NX, Orin Nano):
+
+### Prerequisites
+
+- JetPack 6.0+ (L4T r36.2.0+)
+- Docker with NVIDIA container runtime
+- ~15GB disk space for the built image
+
+### Quick Start (Jetson)
 
 ```bash
-# Use JetPack base image instead
-# Edit Dockerfile to use:
-# FROM nvcr.io/nvidia/l4t-ros:humble-l4t-r36.2.0
+# Clone and enter repository (on Jetson)
+git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
+cd GerdsenAI-Depth-Anything-3-ROS2-Wrapper
 
-# Or use pre-built JetPack image
-docker build -f docker/Dockerfile.jetson -t depth_anything_3_ros2:jetson .
+# Build the Jetson image (takes ~45 minutes)
+docker compose build depth-anything-3-jetson
+
+# Run the container
+docker compose up -d depth-anything-3-jetson
+docker exec -it da3_jetson bash
+
+# Inside container: test inference
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
+  image_topic:=/camera/image_raw \
+  model_name:=depth-anything/DA3-SMALL \
+  log_inference_time:=true
+```
+
+### Windows to Jetson Workflow
+
+If cloning on Windows and transferring to Jetson:
+
+```bash
+# On Windows: Fix line endings before transfer
+# The Dockerfile handles this automatically with:
+# RUN sed -i 's/\r$//' /ros_entrypoint.sh
+
+# Transfer to Jetson (from Windows)
+scp -r . user@jetson-ip:~/depth_anything_3_ros2/
+```
+
+### Known Jetson Build Requirements
+
+| Component | Requirement | Notes |
+|-----------|-------------|-------|
+| **Base Image** | `dustynv/ros:humble-ros-base-l4t-r36.2.0` | No NGC auth required |
+| **torchvision** | Build from source | NVIDIA wheel ABI mismatch |
+| **cv_bridge** | Build from source | OpenCV version conflict |
+| **pycolmap/evo** | Runtime patched | No ARM64 wheels |
+| **Final Image Size** | ~14.9GB | Includes PyTorch, ROS2, models |
+
+### Current Performance (PyTorch Baseline)
+
+| Model | Resolution | FPS | Inference Time |
+|-------|------------|-----|----------------|
+| DA3-SMALL | 518x518 | ~5.2 | ~193ms |
+
+**Note**: TensorRT acceleration is currently blocked due to ONNX opset 18 incompatibility with TensorRT 8.6.2. See [TODO.md](../TODO.md) for details.
+
+### Manual Build (Alternative)
+
+```bash
+# Build Jetson image directly
+docker build -t depth_anything_3_ros2:jetson \
+    --build-arg BUILD_TYPE=jetson-base \
+    --build-arg L4T_VERSION=r36.2.0 \
+    .
+
+# Run with GPU access
+docker run -it --rm \
+    --runtime=nvidia \
+    --gpus all \
+    --network host \
+    -v /dev:/dev:rw \
+    --privileged \
+    depth_anything_3_ros2:jetson
 ```
 
 ## Cleanup
