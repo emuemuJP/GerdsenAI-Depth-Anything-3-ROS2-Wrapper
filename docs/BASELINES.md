@@ -41,16 +41,42 @@ This document records measured performance baselines for future reference and co
 
 ---
 
-## TensorRT Status
+## TensorRT 10.3 - Validated Performance (2026-01-31)
 
-### Solution Implemented
+### Solution Validation
 
 | Aspect | Details |
 |--------|---------|
 | **Previous Issue** | TensorRT 8.6.2 incompatible with DINOv2 Einsum ops |
 | **Solution** | Docker image updated to L4T r36.4.0 (TensorRT 10.3) |
-| **Status** | Ready for testing - rebuild Docker image |
-| **Expected FPS** | 20-30 FPS with TensorRT FP16 |
+| **Status** | Validated - Phase 1 complete |
+| **Validated FPS** | 35.3 FPS with TensorRT FP16 |
+
+### Validated Performance Metrics
+
+**Test Date**: 2026-01-31
+**Platform**: Jetson Orin NX 16GB
+**JetPack**: 6.2 (L4T r36.4.0)
+**TensorRT**: 10.3
+**CUDA**: 12.6
+**Model**: DA3-SMALL
+**Resolution**: 518x518
+**Precision**: FP16
+
+| Metric | Value |
+|--------|-------|
+| Throughput | 35.3 FPS |
+| GPU Latency (median) | 26.4ms |
+| GPU Latency (min) | 25.5ms |
+| Engine Size | 58MB |
+| Speedup vs PyTorch | 6.8x |
+| Test Method | Host validation script |
+
+**Key Technical Details:**
+- Base image: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
+- Build command: `--memPoolSize=workspace:2048MiB` (TRT 10.x syntax)
+- ONNX export: 5D input shape `pixel_values:1x1x3x518x518`
+- Validation script: `scripts/test_trt10.3_host.sh`
 
 ### torchvision Build Requirement
 
