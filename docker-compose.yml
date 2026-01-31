@@ -88,6 +88,8 @@ services:
       # TensorRT configuration
       - DA3_ENGINE_PATH=${DA3_ENGINE_PATH:-/app/models/tensorrt/da3-small-fp16.engine}
       - DA3_TENSORRT_AUTO=${DA3_TENSORRT_AUTO:-false}
+      # Host-container split mode (runs TRT on host, ROS2 in container)
+      - DA3_HOST_TRT=${DA3_HOST_TRT:-false}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./models:/root/.cache/huggingface:rw
@@ -96,6 +98,8 @@ services:
       - ./examples:/examples:ro
       - ./config:/app/config:ro
       - /dev:/dev:rw
+      # Shared memory for host-container TRT communication
+      - /tmp/da3_shared:/tmp/da3_shared:rw
       # Mount host TensorRT 10.3 (JetPack 6.2+) for DA3 compatibility
       - /usr/src/tensorrt:/usr/src/tensorrt:ro
       - /usr/lib/aarch64-linux-gnu/libnvinfer.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvinfer.so.10:ro
