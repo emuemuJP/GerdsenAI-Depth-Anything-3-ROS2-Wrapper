@@ -950,11 +950,20 @@ Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 
 ### TensorRT Status
 
-TensorRT acceleration is now available via Docker image update:
+TensorRT acceleration has been validated on Jetson Orin NX 16GB:
 
 - **Previous Issue**: TensorRT 8.6.2 (L4T r36.2.0) incompatible with DINOv2/Einsum ops
 - **Solution**: Docker image updated to L4T r36.4.0 (TensorRT 10.3)
-- **Status**: Ready for testing - rebuild Docker image to enable
+- **Status**: Validated - performance verified
+
+**Validated Performance (2026-01-31):**
+- Platform: Jetson Orin NX 16GB
+- TensorRT Version: 10.3
+- Model: DA3-SMALL at 518x518 FP16
+- Throughput: 35.3 FPS
+- GPU Latency: 26.4ms median (25.5ms min)
+- Engine Size: 58MB
+- Speedup: 6.8x over PyTorch baseline (~5.2 FPS)
 
 **To enable TensorRT:**
 ```bash
@@ -965,17 +974,16 @@ docker compose build depth-anything-3-jetson
 DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
 ```
 
-See [TODO.md](TODO.md) for test instructions and expected results.
+See [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md) for detailed performance data.
 
-### Performance Targets (Future)
+### Validated TensorRT Performance
 
-Once TensorRT acceleration is resolved, expected performance on Jetson Orin AGX 64GB:
+Measured on Jetson Orin NX 16GB with TensorRT 10.3 (2026-01-31):
 
-| Model | Backend | FPS (Expected) | Inference Time |
-|-------|---------|----------------|----------------|
-| DA3-Small | TensorRT FP16 | ~25-35 | ~30-40ms |
-| DA3-Base | TensorRT FP16 | ~20-25 | ~40-50ms |
-| DA3-Large | TensorRT FP16 | ~12-15 | ~70-85ms |
+| Model | Backend | Resolution | FPS | GPU Latency | Speedup vs PyTorch |
+|-------|---------|------------|-----|-------------|-------------------|
+| DA3-SMALL | TensorRT FP16 | 518x518 | 35.3 | 26.4ms (median) | 6.8x |
+| DA3-SMALL | PyTorch FP32 | 518x518 | 5.2 | ~193ms | Baseline |
 
 ### Optimization Tips (Current)
 
