@@ -143,7 +143,7 @@ Based on typical TensorRT speedups (2-4x over PyTorch), expected performance on 
 1. **Start Container**
    ```bash
    docker compose up -d depth-anything-3-jetson
-   docker exec -it da3_jetson bash
+   docker exec -it da3_ros2_jetson bash
    ```
 
 2. **Run Node with Logging**
