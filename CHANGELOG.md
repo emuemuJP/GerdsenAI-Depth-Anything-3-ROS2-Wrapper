@@ -1,24 +1,37 @@
 # Changelog
 
-## [Unreleased] - 2026-01-30
+## [Unreleased] - 2026-01-31
 
-### Critical Findings
+### TensorRT 10.3 Validation - Phase 1 Complete
+
+- **TensorRT 10.3 Performance Validated**:
+  - Platform: Jetson Orin NX 16GB
+  - Model: DA3-SMALL at 518x518 FP16
+  - Throughput: 35.3 FPS
+  - GPU Latency: 26.4ms median (25.5ms min)
+  - Engine Size: 58MB
+  - Speedup: 6.8x over PyTorch baseline (~5.2 FPS)
+  - Test Date: 2026-01-31
+  - Validation: Host script `scripts/test_trt10.3_host.sh`
+
+### Critical Findings (Resolved)
 
 - **TensorRT 8.6 Fundamentally Incompatible with DA3**:
   - Root cause: DINOv2 backbone exports Einsum operations unsupported by TRT 8.6
   - Error: "caskConvolutionV2Forward could not find any supported formats"
   - NVIDIA GitHub Issue #4537 confirms DINOv2 failures persist until TRT 10.8+
   - Workarounds (opset 17 re-export, graph surgery) not viable
-  - **Solution Implemented:** Updated Docker base image to L4T r36.4.0 (TensorRT 10.3)
+  - **Solution Validated:** Docker base image L4T r36.4.0 (TensorRT 10.3)
   - Full analysis: `docs/TENSORRT_DA3_PLAN.md`
 
 ### Docker Base Image Update
 
 - **Updated Jetson base image to L4T r36.4.0**:
   - Previous: `dustynv/ros:humble-ros-base-l4t-r36.2.0` (TensorRT 8.6.2)
-  - Current: `dustynv/ros:humble-ros-base-l4t-r36.4.0` (TensorRT 10.3)
-  - Benefits: Full DINOv2/ViT support, 70% AI TOPS boost via Super Mode
-  - Updated PyTorch installation comments to reference JetPack 6.2
+  - Current: `dustynv/ros:humble-pytorch-l4t-r36.4.0` (TensorRT 10.3)
+  - Benefits: Full DINOv2/ViT support, validated 6.8x speedup
+  - TRT 10.x syntax: `--memPoolSize=workspace:2048MiB`
+  - ONNX 5D input: `pixel_values:1x1x3x518x518`
 
 ### Performance Baseline
 
