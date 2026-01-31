@@ -2,13 +2,95 @@
 
 ## Executive Summary
 
-**Current State:** PyTorch inference @ ~5.2 FPS (193ms latency) on Jetson Orin NX 16GB
-**Target:** TensorRT FP16 @ >20 FPS (preferably >30 FPS) at 518x518 resolution
-**Solution:** Docker image updated to L4T r36.4.0 (TensorRT 10.3)
+**Current State:** TensorRT FP16 @ 35.3 FPS (26.4ms latency) on Jetson Orin NX 16GB
+**Previous:** PyTorch FP32 @ ~5.2 FPS (193ms latency)
+**Speedup:** 6.8x achieved with TensorRT 10.3
 
 ---
 
-## Root Cause Analysis
+## Phase 1: TensorRT Validation [COMPLETE]
+
+**Goal:** Confirm TensorRT 10.3 can build DA3 engines
+**Status:** VALIDATED - 6.8x speedup confirmed
+
+### Validated Performance
+
+| Metric | PyTorch Baseline | TensorRT 10.3 FP16 |
+|--------|-----------------|-------------------|
+| **FPS** | ~5.2 | **35.3** |
+| **Inference** | ~193ms | **26.4ms** |
+| **Speedup** | 1x | **6.8x** |
+| **Engine Size** | N/A | 58MB |
+
+### Completed Steps
+- [x] Verify TensorRT 8.6.2 on host causes build failure
+- [x] Identify root cause: Einsum/DINOv2 incompatibility with TRT 8.6
+- [x] Update Dockerfile to L4T r36.4.0 (TensorRT 10.3)
+- [x] Created deployment guide: `docs/JETSON_DEPLOYMENT_GUIDE.md`
+- [x] Validate TRT 10.3 on host: `bash scripts/test_trt10.3_host.sh`
+- [x] Confirmed: TensorRT 10.3 CAN build DA3 engines
+- [x] Updated Dockerfile base image to `humble-pytorch-l4t-r36.4.0`
+
+### Test Script Fixes Applied
+- [x] TRT 10.x syntax: `--memPoolSize=workspace:2048MiB` (not `--workspace`)
+- [x] 5D input shape: `pixel_values:1x1x3x518x518`
+- [x] Robust version detection for TRT 10.x
+
+---
+
+## Phase 2: Docker Integration [IN PROGRESS]
+
+**Goal:** Rebuild Docker image and verify full ROS2 integration
+**Status:** Ready for Docker rebuild
+
+### Next Steps
+- [ ] Rebuild Docker image with new base
+  ```bash
+  cd ~/depth_anything_3_ros2
+  docker compose build depth-anything-3-jetson
+  ```
+- [ ] Test TensorRT engine build inside container
+- [ ] Verify ROS2 node with TensorRT backend
+- [ ] Measure sustained FPS with camera input
+
+### Test Commands
+```bash
+# Start with TensorRT auto-build
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+
+# Verify TensorRT version
+docker exec -it da3_ros2_jetson python3 -c "import tensorrt; print(tensorrt.__version__)"
+# Expected: 10.3.x
+
+# Check engine was built
+docker exec -it da3_ros2_jetson ls -lh /root/.cache/tensorrt/*.engine
+
+# Measure FPS
+ros2 topic hz /depth_anything_3/depth
+# Expected: 30-35 FPS
+```
+
+---
+
+## Phase 3: Resolution Tuning [PENDING]
+
+**Goal:** Optimize for different use cases
+**Status:** Pending Phase 2 completion
+
+**Expected Performance (based on host validation):**
+- 518x518: ~35 FPS (validated)
+- 308x308: ~50+ FPS (estimated)
+
+---
+
+## Phase 4: Thermal and Stability Validation [PENDING]
+
+**Goal:** Ensure sustained performance without throttling
+**Status:** Pending Phase 2 completion
+
+---
+
+## Root Cause Analysis (Historical)
 
 ### Why TensorRT 8.6 Cannot Build DA3 Engines
 
@@ -34,107 +116,11 @@ The DINOv2 backbone at DA3's core uses `F.scaled_dot_product_attention()` which 
 
 ---
 
-## Phase 1: TensorRT Validation [READY TO TEST]
-
-**Goal:** Confirm TensorRT 10.3 can build DA3 engines
-**Status:** Dockerfile updated - ready for rebuild and test
-
-### Completed Steps
-- [x] Verify TensorRT 8.6.2 on host causes build failure
-- [x] Identify root cause: Einsum/DINOv2 incompatibility with TRT 8.6
-- [x] Update Dockerfile to L4T r36.4.0 (TensorRT 10.3)
-- [x] Created deployment guide: `docs/JETSON_DEPLOYMENT_GUIDE.md`
-
-### Next Steps
-
-**CRITICAL:** Test TRT 10.3 on host before Docker rebuild (2-3 min vs 20 min)
-
-- [ ] **Validate TRT 10.3 on Host First**
-  - [ ] Run: `bash scripts/test_trt10.3_host.sh` on Jetson (not in Docker)
-  - [ ] If SUCCESS: Proceed to Docker rebuild
-  - [ ] If FAILURE: TRT 10.3 insufficient, use fallback (ONNX Runtime or DA2)
-  - [ ] Reason: Research states "full fixes in TRT 10.8+", but we have 10.3
-
-- [ ] Rebuild Docker image with new base (only if host validation succeeds)
-- [ ] Test TensorRT engine build (should succeed with TRT 10.3)
-- [ ] Verify FPS improvement
-
-### Test Steps
-1. Rebuild Docker image:
-   ```bash
-   cd ~/depth_anything_3_ros2
-   docker compose build depth-anything-3-jetson
-   ```
-
-2. Start with TensorRT auto-build:
-   ```bash
-   DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
-   ```
-
-3. Verify TensorRT version:
-   ```bash
-   docker exec -it da3_ros2_jetson python3 -c "import tensorrt; print(tensorrt.__version__)"
-   # Expected: 10.3.x
-   ```
-
-4. Check engine was built:
-   ```bash
-   docker exec -it da3_ros2_jetson ls -lh /root/.cache/tensorrt/*.engine
-   ```
-
-5. Measure FPS:
-   ```bash
-   ros2 topic hz /depth_anything_3/depth
-   # Expected: 20-30 FPS
-   ```
-
----
-
-## Phase 2: Resolution Tuning [PENDING]
-
-**Goal:** Optimize for target FPS (>20 or >30)
-**Status:** Pending Phase 1 completion
-
-**Analysis (for when TensorRT works):**
-- 518x518: Target 20-30 FPS
-- 308x308: Target 40+ FPS
-- Custom (e.g., 400x400): Sweet spot between 308 and 518
-
----
-
-## Phase 3: Thermal and Stability Validation [PENDING]
-
-**Goal:** Ensure sustained performance without throttling
-**Status:** Pending Phase 1 completion
-
----
-
-## Current Performance Baseline
-
-| Metric | Measured Value | Notes |
-|--------|----------------|-------|
-| **Model** | DA3-SMALL | PyTorch, FP32 |
-| **Resolution** | 518x518 | Input size |
-| **FPS** | ~5.2 | Measured on Orin NX 16GB |
-| **Inference Time** | ~193ms | Per frame |
-| **Platform** | JetPack 6.0 | L4T r36.2.0, CUDA 12.2, TRT 8.6.2 |
-
----
-
-## Expected Performance (TensorRT 10.3)
-
-| Metric | PyTorch Baseline | TensorRT FP16 Target |
-|--------|------------------|---------------------|
-| **FPS** | ~5.2 | 20-30 |
-| **Inference Time** | ~193ms | ~35-50ms |
-| **Speedup** | 1x | 4-6x |
-
----
-
 ## Completed Work
 
 ### Docker Image Updates
 - [x] Updated L4T_VERSION from r36.2.0 to r36.4.0
+- [x] Changed base image to `humble-pytorch-l4t-r36.4.0`
 - [x] TensorRT 10.3 now available in container
 - [x] cv_bridge built from source (OpenCV 4.8.1 compatibility)
 - [x] torchvision built from source (NVIDIA PyTorch ABI)
@@ -142,8 +128,10 @@ The DINOv2 backbone at DA3's core uses `F.scaled_dot_product_attention()` which 
 
 ### Infrastructure
 - [x] `scripts/build_tensorrt_engine.py` with auto-detection
+- [x] `scripts/test_trt10.3_host.sh` for pre-Docker validation
 - [x] Platform detection for Jetson modules
 - [x] Pre-exported ONNX model pipeline
+- [x] TRT 10.x syntax fixes (`--memPoolSize`, 5D shapes)
 
 ---
 
@@ -157,6 +145,6 @@ The DINOv2 backbone at DA3's core uses `F.scaled_dot_product_attention()` which 
 
 ---
 
-**Last Updated:** 2026-01-30
-**Current Focus:** Test TensorRT 10.3 engine build
-**Next:** Rebuild Docker image and verify FPS
+**Last Updated:** 2026-01-31
+**Current Focus:** Docker rebuild and ROS2 integration test
+**Next:** Rebuild Docker image with L4T r36.4.0
