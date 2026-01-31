@@ -43,7 +43,7 @@ This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), provi
 - **Docker Support**: Pre-configured Docker and Docker Compose files
 - **Example Images**: Sample test images and benchmark scripts included
 - **Performance Profiling**: Built-in benchmarking and profiling tools
-- **TensorRT Support**: Optimization scripts for NVIDIA Jetson platforms
+- **TensorRT Support**: Optimization scripts for NVIDIA Jetson platforms (currently blocked by opset incompatibility - see [TensorRT Status](#tensorrt-status))
 - **Post-Processing**: Depth map filtering, hole filling, and enhancement
 - **INT8 Quantization**: Model compression for faster inference
 - **ONNX Export**: Deploy to various platforms and runtimes
@@ -938,60 +938,67 @@ open build/html/index.html  # or xdg-open on Linux
 
 ## Performance
 
-### Benchmark Results (Jetson Orin AGX 64GB)
+### Current Status (PyTorch Baseline)
 
-Tested with 640x480 input images:
+Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 
-| Model | FPS | Inference Time | GPU Memory |
-|-------|-----|----------------|------------|
-| DA3-Small | ~25 FPS | ~40ms | ~1.5 GB |
-| DA3-Base | ~20 FPS | ~50ms | ~2.5 GB |
-| DA3-Large | ~12 FPS | ~85ms | ~4.0 GB |
-| DA3-Giant | ~6 FPS | ~165ms | ~6.5 GB |
+| Model | Backend | Resolution | FPS | Inference Time |
+|-------|---------|------------|-----|----------------|
+| DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
 
-### Optimization Tips
+**Note**: TensorRT acceleration is not yet available due to ONNX opset incompatibility. See [TensorRT Status](#tensorrt-status) below.
 
-1. **TensorRT Optimization** (Jetson platforms):
+### TensorRT Status
+
+TensorRT native acceleration is currently **blocked**:
+
+- **Issue**: TensorRT 8.6.2 (bundled with JetPack 6.0) supports max ONNX opset 17
+- **DA3 Models**: Export with opset 18+ (incompatible)
+- **Result**: TensorRT native acceleration not available
+
+**Workarounds under investigation**:
+1. ONNX Runtime with CUDA EP (functional but slower than TRT)
+2. Re-export models with opset 17 from PyTorch source
+3. Wait for JetPack update with TensorRT 10+ support
+
+For now, use PyTorch inference. Performance improvements are tracked in [TODO.md](TODO.md).
+
+### Performance Targets (Future)
+
+Once TensorRT acceleration is resolved, expected performance on Jetson Orin AGX 64GB:
+
+| Model | Backend | FPS (Expected) | Inference Time |
+|-------|---------|----------------|----------------|
+| DA3-Small | TensorRT FP16 | ~25-35 | ~30-40ms |
+| DA3-Base | TensorRT FP16 | ~20-25 | ~40-50ms |
+| DA3-Large | TensorRT FP16 | ~12-15 | ~70-85ms |
+
+### Optimization Tips (Current)
+
+1. **Use Smaller Models**: DA3-SMALL offers best speed with acceptable accuracy
+
+2. **Reduce Input Resolution**: Lower resolution images process faster
 ```bash
-cd examples/scripts
-python3 optimize_tensorrt.py --model depth-anything/DA3-BASE \
-    --output da3_base_trt.pth --precision fp16
-# Expected: 2-3x speedup
+--param inference_height:=308 inference_width:=308
 ```
 
-2. **INT8 Quantization** for faster inference:
-```bash
-python3 performance_tuning.py quantize \
-    --model depth-anything/DA3-BASE --output da3_base_int8.pth
-# 50-75% smaller, 20-40% faster
-```
-
-3. **Reduce Input Resolution**: Lower resolution images process faster
-```bash
---param inference_height:=384 inference_width:=512
-```
-
-4. **Use Smaller Models**: DA3-SMALL offers best speed, DA3-BASE balances speed/accuracy
-
-5. **Queue Size**: Set to 1 to always process latest frame
+3. **Queue Size**: Set to 1 to always process latest frame
 ```bash
 --param queue_size:=1
 ```
 
-6. **Disable Unused Outputs**: Save processing time
+4. **Disable Unused Outputs**: Save processing time
 ```bash
 --param publish_colored_depth:=false
 --param publish_confidence:=false
 ```
 
-7. **Multiple Cameras**: Each camera runs in separate process with shared GPU
-
-8. **Performance Profiling**: Profile to identify bottlenecks
+5. **Performance Profiling**: Profile to identify bottlenecks
 ```bash
 python3 examples/scripts/profile_node.py --model depth-anything/DA3-BASE
 ```
 
-For comprehensive optimization guide, see [Performance Tuning Tutorial](docs/source/tutorials/performance_tuning.rst).
+For comprehensive optimization guide, see [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md).
 
 ---
 

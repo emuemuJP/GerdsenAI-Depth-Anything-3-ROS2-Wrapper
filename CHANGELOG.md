@@ -2,6 +2,22 @@
 
 ## [Unreleased] - 2026-01-30
 
+### Critical Findings
+
+- **TensorRT Opset Incompatibility Discovered**:
+  - TensorRT 8.6.2 (bundled with JetPack 6.0) only supports ONNX opset 17
+  - DA3 models export with opset 18+ (incompatible)
+  - Result: TensorRT native acceleration currently blocked
+  - Workaround options documented in TODO.md
+
+### Performance Baseline
+
+- **Measured on Jetson Orin NX 16GB** (JetPack 6.0, L4T r36.2.0, CUDA 12.2):
+  - Model: DA3-SMALL (PyTorch, FP32)
+  - Resolution: 518x518
+  - Inference Time: ~193ms per frame
+  - FPS: ~5.2 FPS
+
 ### Added
 
 - **Jetson Hardware Detection** (`depth_anything_3_ros2/jetson_detector.py`):
@@ -58,6 +74,16 @@
 - **ARM64 Python Package Dependencies**:
   - pycolmap and open3d lack ARM64 wheels
   - Solution: Install Depth Anything 3 with `--no-deps`, manually install required inference dependencies
+  - Runtime patch: api.py patched at container startup to handle missing pycolmap/evo imports
+
+- **torchvision Source Build Required**:
+  - NVIDIA PyTorch wheel has ABI mismatch with pip torchvision
+  - NMS operator crashes at runtime with pip-installed torchvision
+  - Solution: Build torchvision 0.18.0 from source against NVIDIA PyTorch wheel
+
+- **Windows CRLF Line Endings**:
+  - ros_entrypoint.sh fails with CRLF line endings on Windows-cloned repos
+  - Solution: Added `sed -i 's/\r$//'` in Dockerfile for entrypoint scripts
 
 - **Test Collection Failures (Issue #21)**:
   - Tests failed when ROS2 environment not sourced

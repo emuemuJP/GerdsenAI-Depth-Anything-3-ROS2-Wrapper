@@ -2,18 +2,49 @@
 
 This guide explains how to achieve >30 FPS performance with 1080p depth and confidence outputs on NVIDIA Jetson Orin AGX 64GB.
 
-## Performance Targets
+---
+
+## IMPORTANT: TensorRT Status (2026-01-30)
+
+**TensorRT native acceleration is currently BLOCKED.**
+
+| Issue | Details |
+|-------|---------|
+| **Root Cause** | TensorRT 8.6.2 (JetPack 6.0) only supports ONNX opset 17 |
+| **DA3 Models** | Export with opset 18+ (incompatible) |
+| **Current Workaround** | Use PyTorch inference (~5.2 FPS on Orin NX 16GB) |
+
+**Workaround Options** (under investigation):
+1. Use ONNX Runtime with CUDA Execution Provider (not TRT EP)
+2. Re-export DA3 with opset 17 from PyTorch source
+3. Upgrade to TensorRT 10+ (requires JetPack upgrade when available)
+
+The TensorRT sections below document the **intended** optimization path once opset compatibility is resolved.
+
+---
+
+## Current Baseline Performance
+
+Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0, CUDA 12.2):
+
+| Model | Backend | Resolution | FPS | Inference Time |
+|-------|---------|------------|-----|----------------|
+| DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
+
+---
+
+## Performance Targets (Future - TensorRT)
 
 - **Input**: 1080p camera (1920x1080) at 30 FPS
 - **Output**: 1080p depth + confidence maps
 - **Target FPS**: >30 FPS sustained
 - **Platform**: NVIDIA Jetson Orin AGX 64GB
 
-## Quick Start (Fastest Path to >30 FPS)
+## Quick Start (Currently Available - PyTorch)
 
-### Option 1: PyTorch FP16 (No TensorRT) - ~25-28 FPS
+### Option 1: PyTorch FP32 (Current Baseline) - ~5 FPS
 
-Easiest setup, no model conversion required:
+Currently functional on Jetson. No TensorRT acceleration available yet:
 
 ```bash
 # Configure your webcam for 1080p MJPEG
@@ -31,9 +62,11 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   model_input_width:=384
 ```
 
-### Option 2: TensorRT FP16 (Recommended) - >30 FPS
+### Option 2: TensorRT FP16 (BLOCKED - Future) - >30 FPS Target
 
-Requires one-time model conversion, achieves >30 FPS:
+**NOTE: Currently blocked due to ONNX opset 18 incompatibility with TensorRT 8.6.2.**
+
+When available, requires one-time model conversion:
 
 ```bash
 # Step 1: Build TensorRT engine with auto-detection (recommended)
@@ -53,9 +86,9 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_308x308_*.engine
 ```
 
-### Option 3: Docker Deployment (Easiest)
+### Option 3: Docker Deployment (PyTorch Only Currently)
 
-Build and run with automatic TensorRT engine building:
+Build and run with PyTorch inference (TensorRT auto-build blocked):
 
 ```bash
 # Build the Jetson image
@@ -353,27 +386,37 @@ Expected: 40-45 FPS (720p output)
 
 ## Benchmark Results
 
-Tested on Jetson Orin AGX 64GB with Anker PowerConf C200:
+### Measured Results (PyTorch - Current)
 
-| Configuration | Model Input | Backend | FPS | Total Time | Quality |
-|--------------|-------------|---------|-----|------------|---------|
-| Baseline | 518x518 | PyTorch | 6 FPS | 167ms | Excellent |
-| Optimized FP16 | 518x518 | PyTorch FP16 | 22 FPS | 45ms | Very Good |
-| **Recommended** | 518x518 | TensorRT FP16 | **32 FPS** | **31ms** | Excellent |
-| Memory Optimized | 308x308 | TensorRT FP16 | 40 FPS | 25ms | Good |
+Tested on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 
-All configurations produce 1080p depth + confidence outputs.
+| Configuration | Model Input | Backend | FPS | Inference Time | Notes |
+|--------------|-------------|---------|-----|----------------|-------|
+| **Current Baseline** | 518x518 | PyTorch FP32 | ~5.2 | ~193ms | Functional |
 
-### Platform-Specific Recommendations
+### Expected Results (TensorRT - Future)
+
+Once TensorRT opset compatibility is resolved:
+
+| Configuration | Model Input | Backend | FPS (Expected) | Quality |
+|--------------|-------------|---------|----------------|---------|
+| Baseline | 518x518 | PyTorch FP32 | ~5-6 FPS | Excellent |
+| Optimized FP16 | 518x518 | PyTorch FP16 | ~10-15 FPS | Very Good |
+| TensorRT FP16 | 518x518 | TensorRT FP16 | ~25-32 FPS | Excellent |
+| Memory Optimized | 308x308 | TensorRT FP16 | ~35-40 FPS | Good |
+
+### Platform-Specific Recommendations (Future - TensorRT)
 
 | Platform | Model | Resolution | Precision | Expected FPS |
 |----------|-------|------------|-----------|--------------|
-| Orin Nano 4GB | da3-small | 308 | FP16 | 30 |
-| Orin Nano 8GB | da3-small | 308 | FP16 | 35 |
-| Orin NX 8GB | da3-small | 308 | FP16 | 40 |
-| Orin NX 16GB | da3-small | 518 | FP16 | 45 |
-| AGX Orin 32GB | da3-base | 518 | FP16 | 50 |
-| AGX Orin 64GB | da3-large | 518 | FP16 | 50+ |
+| Orin Nano 4GB | da3-small | 308 | FP16 | ~25-30 |
+| Orin Nano 8GB | da3-small | 308 | FP16 | ~30-35 |
+| Orin NX 8GB | da3-small | 308 | FP16 | ~35-40 |
+| Orin NX 16GB | da3-small | 518 | FP16 | ~30-40 |
+| AGX Orin 32GB | da3-base | 518 | FP16 | ~40-50 |
+| AGX Orin 64GB | da3-large | 518 | FP16 | ~45-50+ |
+
+**Note**: These are projected values based on typical TensorRT speedups. Actual performance depends on opset compatibility resolution.
 
 ## Quality Comparison
 
