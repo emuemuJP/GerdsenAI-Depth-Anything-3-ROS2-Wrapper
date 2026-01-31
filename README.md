@@ -1000,7 +1000,7 @@ Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv
 
 ```bash
 cd ~/depth_anything_3_ros2
-bash scripts/deploy_jetson.sh
+bash scripts/deploy_jetson.sh --host-trt
 ```
 
 This script:
