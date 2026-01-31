@@ -138,6 +138,10 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
   - [Platform Recommendations](#platform-recommendations)
   - [Model Licensing](#model-licensing)
 - [Quick Start](#quick-start)
+- [Demo Mode (Jetson Deployment)](#demo-mode-jetson-deployment)
+  - [RViz2 Visualization](#rviz2-visualization)
+  - [Desktop Shortcuts](#desktop-shortcuts)
+  - [Performance Monitor](#performance-monitor)
 - [Configuration](#configuration)
 - [Usage Examples](#usage-examples)
 - [Docker Deployment](#docker-deployment)
@@ -425,6 +429,96 @@ ros2 launch depth_anything_3_ros2 usb_camera_example.launch.py
 ros2 launch depth_anything_3_ros2 image_publisher_test.launch.py \
   image_path:=/path/to/your/test_image.jpg
 ```
+
+---
+
+## Demo Mode (Jetson Deployment)
+
+For Jetson users, we provide a single-command demo script that handles everything automatically:
+
+```bash
+# After SCP'ing to Jetson
+ssh gerdsenai@10.69.7.112
+cd ~/depth_anything_3_ros2
+bash scripts/demo.sh
+```
+
+The demo script will:
+1. **Auto-detect cameras** (USB and CSI) and let you select if multiple are found
+2. **Build TensorRT engine** on first run (~2 minutes)
+3. **Start TRT inference service** for 35+ FPS performance
+4. **Launch Docker container** with ROS2 depth estimation node
+5. **Open performance monitor** showing live FPS, latency, and GPU stats
+6. **Optionally launch RViz2** for visualization
+
+### Demo Script Options
+
+```bash
+bash scripts/demo.sh --help
+
+Options:
+  --camera DEVICE     Specify camera device (e.g., /dev/video0)
+  --topic TOPIC       Specify ROS2 image topic directly
+  --no-rviz           Skip RViz2 launch
+  --no-monitor        Skip performance monitor
+  --no-trt            Use PyTorch instead of TensorRT
+  --rebuild           Force rebuild Docker image
+```
+
+### RViz2 Visualization
+
+**Important**: RViz2 should be installed on the **Jetson host** (not inside Docker) for best performance:
+
+```bash
+# Install RViz2 on Jetson host
+sudo apt install ros-humble-rviz2
+
+# Source ROS2 environment
+source /opt/ros/humble/setup.bash
+
+# Launch RViz2 with pre-configured view
+rviz2 -d ~/depth_anything_3_ros2/rviz/depth_view.rviz
+```
+
+The demo script automatically launches RViz2 if it's installed on the host. If not installed, it will display instructions and continue without visualization.
+
+### Desktop Shortcuts
+
+For convenience, you can install desktop shortcuts on Jetson:
+
+```bash
+bash desktop/install_shortcuts.sh
+```
+
+This creates shortcuts for:
+- **Depth Anything V3 Demo** - Main demo launcher
+- **DA3 RViz2 Viewer** - RViz2 visualization only
+- **DA3 Performance Monitor** - Live performance metrics
+
+### Performance Monitor
+
+The performance monitor displays real-time metrics:
+
+```
+========================================
+  Depth Anything V3 - Performance
+========================================
+
+TensorRT Inference Service
+----------------------------------------
+  Status:     Running
+  FPS:        35.2
+  Latency:    28.4 ms
+  Frames:     1024
+
+GPU Resources
+----------------------------------------
+  GPU Usage:  45%
+  GPU Memory: 2048 / 15360 MB
+  GPU Temp:   52C
+```
+
+Run standalone: `bash scripts/performance_monitor.sh`
 
 ---
 
