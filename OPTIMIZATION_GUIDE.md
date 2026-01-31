@@ -4,17 +4,25 @@ This guide explains how to achieve >30 FPS performance with 1080p depth and conf
 
 ---
 
-## TensorRT Status (2026-01-30)
+## TensorRT Status (2026-01-31)
 
-**TensorRT acceleration is now available via Docker image update.**
+**TensorRT acceleration validated on Jetson Orin NX 16GB.**
 
 | Component | Previous (L4T r36.2.0) | Current (L4T r36.4.0) |
 |-----------|------------------------|----------------------|
-| TensorRT | 8.6.2 (incompatible) | **10.3** (compatible) |
+| TensorRT | 8.6.2 (incompatible) | **10.3** (validated) |
 | CUDA | 12.2 | 12.6 |
 | cuDNN | 8.9 | 9.3 |
 
 **Root Cause (Resolved)**: TensorRT 8.6 could not compile DINOv2's Einsum operations. TensorRT 10.3 has enhanced ViT/MHA support.
+
+**Validated Performance (2026-01-31)**:
+- Platform: Jetson Orin NX 16GB
+- Model: DA3-SMALL at 518x518 FP16
+- Throughput: 35.3 FPS
+- GPU Latency: 26.4ms median (25.5ms min)
+- Engine Size: 58MB
+- Speedup: 6.8x over PyTorch baseline
 
 **To enable TensorRT:**
 ```bash
@@ -27,13 +35,23 @@ DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
 
 ---
 
-## Current Baseline Performance
+## Validated Performance on Jetson Orin NX 16GB
+
+### PyTorch Baseline
 
 Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0, CUDA 12.2):
 
 | Model | Backend | Resolution | FPS | Inference Time |
 |-------|---------|------------|-----|----------------|
 | DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
+
+### TensorRT 10.3 (Validated 2026-01-31)
+
+Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3):
+
+| Model | Backend | Resolution | FPS | GPU Latency | Engine Size | Speedup |
+|-------|---------|------------|-----|-------------|-------------|---------|
+| DA3-SMALL | TensorRT FP16 | 518x518 | 35.3 | 26.4ms median (25.5ms min) | 58MB | 6.8x |
 
 ---
 
@@ -396,29 +414,35 @@ Tested on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 |--------------|-------------|---------|-----|----------------|-------|
 | **Current Baseline** | 518x518 | PyTorch FP32 | ~5.2 | ~193ms | Functional |
 
-### Expected Results (TensorRT 10.3)
+### Validated Results (TensorRT 10.3)
 
-With L4T r36.4.0 Docker image (TensorRT 10.3):
+Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3, 2026-01-31):
 
-| Configuration | Model Input | Backend | FPS (Expected) | Quality |
-|--------------|-------------|---------|----------------|---------|
-| Baseline | 518x518 | PyTorch FP32 | ~5-6 FPS | Excellent |
-| Optimized FP16 | 518x518 | PyTorch FP16 | ~10-15 FPS | Very Good |
-| TensorRT FP16 | 518x518 | TensorRT FP16 | ~25-32 FPS | Excellent |
-| Memory Optimized | 308x308 | TensorRT FP16 | ~35-40 FPS | Good |
+| Configuration | Model Input | Backend | FPS | GPU Latency | Quality |
+|--------------|-------------|---------|-----|-------------|---------|
+| Baseline | 518x518 | PyTorch FP32 | 5.2 | ~193ms | Excellent |
+| TensorRT FP16 | 518x518 | TensorRT FP16 | 35.3 | 26.4ms median | Excellent |
 
-### Platform-Specific Recommendations (TensorRT 10.3)
+**Key Technical Details:**
+- Dockerfile base: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
+- TRT 10.x syntax: `--memPoolSize=workspace:2048MiB` (not deprecated `--workspace`)
+- ONNX input shape: 5D `pixel_values:1x1x3x518x518`
+- Engine size: 58MB
 
-| Platform | Model | Resolution | Precision | Expected FPS |
-|----------|-------|------------|-----------|--------------|
-| Orin Nano 4GB | da3-small | 308 | FP16 | ~25-30 |
-| Orin Nano 8GB | da3-small | 308 | FP16 | ~30-35 |
-| Orin NX 8GB | da3-small | 308 | FP16 | ~35-40 |
-| Orin NX 16GB | da3-small | 518 | FP16 | ~30-40 |
-| AGX Orin 32GB | da3-base | 518 | FP16 | ~40-50 |
-| AGX Orin 64GB | da3-large | 518 | FP16 | ~45-50+ |
+### Platform-Specific Performance Projections
 
-**Note**: Requires Docker image rebuild with L4T r36.4.0 base.
+Based on validated Orin NX 16GB results, projected performance for other platforms:
+
+| Platform | Model | Resolution | Precision | Projected FPS |
+|----------|-------|------------|-----------|---------------|
+| Orin Nano 4GB | da3-small | 308 | FP16 | ~40-45 |
+| Orin Nano 8GB | da3-small | 308 | FP16 | ~45-50 |
+| Orin NX 8GB | da3-small | 308 | FP16 | ~50-55 |
+| **Orin NX 16GB** | **da3-small** | **518** | **FP16** | **35.3 (validated)** |
+| AGX Orin 32GB | da3-small | 518 | FP16 | ~45-55 |
+| AGX Orin 64GB | da3-small | 518 | FP16 | ~50-60 |
+
+**Note**: Projections based on proportional compute capacity. Only Orin NX 16GB has validated measurements.
 
 ## Quality Comparison
 
