@@ -200,13 +200,14 @@ except:
         log_info "  Using Jetson AI Lab PyPI repository (cuDNN 9 compatible)..."
 
         # JetPack 6.2+ uses cuDNN 9.x - requires wheels from Jetson AI Lab
+        # Available versions: 2.8.0, 2.9.1 (as of Jan 2025)
         # Source: https://pypi.jetson-ai-lab.io/jp6/cu126
         pip3 install --no-cache-dir \
-            torch==2.5.0 torchvision==0.20.0 \
+            torch==2.8.0 torchvision==0.23.0 \
             --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126 || {
             log_error "Failed to install PyTorch from Jetson AI Lab"
             log_error "Manual install:"
-            log_error "  pip3 install torch==2.5.0 torchvision==0.20.0 --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126"
+            log_error "  pip3 install torch==2.8.0 torchvision==0.23.0 --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126"
             exit 1
         }
 
