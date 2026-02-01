@@ -83,22 +83,171 @@ PYTHON_PACKAGES=(
     "transformers>=4.35.0"
     "huggingface-hub>=0.19.0"
     "timm>=0.9.0"
+    "safetensors>=0.4.0"
 )
 
 # Check if we're on Jetson (ARM64)
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
     log_info "Detected ARM64 (Jetson) architecture"
-    log_info "Using PyTorch from NVIDIA repository..."
-    
-    # Check if PyTorch is installed
-    if python3 -c "import torch; print(torch.__version__)" 2>/dev/null; then
-        TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)")
-        log_info "  [OK] PyTorch ${TORCH_VERSION} already installed"
+
+    # =========================================
+    # CUDA/cuDNN Setup for Jetson
+    # =========================================
+    # On Jetson, CUDA and cuDNN come with JetPack (system libraries)
+    # We just need to ensure paths are set correctly
+
+    log_info "Checking CUDA/cuDNN installation..."
+
+    # Find CUDA installation
+    CUDA_PATH=""
+    for cuda_dir in /usr/local/cuda /usr/local/cuda-12 /usr/local/cuda-12.6 /usr/local/cuda-12.2; do
+        if [ -d "$cuda_dir" ]; then
+            CUDA_PATH="$cuda_dir"
+            break
+        fi
+    done
+
+    if [ -n "$CUDA_PATH" ]; then
+        log_info "  [OK] CUDA found: $CUDA_PATH"
+
+        # Check nvcc
+        if [ -f "$CUDA_PATH/bin/nvcc" ]; then
+            NVCC_VERSION=$("$CUDA_PATH/bin/nvcc" --version | grep "release" | awk '{print $6}' | cut -d',' -f1)
+            log_info "  [OK] nvcc version: $NVCC_VERSION"
+        else
+            log_warn "  nvcc not found in $CUDA_PATH/bin"
+        fi
+
+        # Set CUDA environment if not already set
+        if [[ ":$PATH:" != *":$CUDA_PATH/bin:"* ]]; then
+            export PATH="$CUDA_PATH/bin:$PATH"
+            log_info "  Added $CUDA_PATH/bin to PATH"
+        fi
+
+        if [[ ":$LD_LIBRARY_PATH:" != *":$CUDA_PATH/lib64:"* ]]; then
+            export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
+            log_info "  Added $CUDA_PATH/lib64 to LD_LIBRARY_PATH"
+        fi
+
+        # Check if CUDA env is in bashrc
+        if ! grep -q "CUDA_HOME" ~/.bashrc 2>/dev/null; then
+            log_info "  Adding CUDA environment to ~/.bashrc..."
+            cat >> ~/.bashrc << EOF
+
+# CUDA environment (added by install_dependencies.sh)
+export CUDA_HOME=$CUDA_PATH
+export PATH=\$CUDA_HOME/bin:\$PATH
+export LD_LIBRARY_PATH=\$CUDA_HOME/lib64:\$LD_LIBRARY_PATH
+EOF
+            log_info "  [OK] CUDA environment added to ~/.bashrc"
+        fi
     else
-        log_warn "PyTorch not found. For Jetson, install from NVIDIA:"
-        log_warn "  https://forums.developer.nvidia.com/t/pytorch-for-jetson/"
-        log_warn "  Or: pip3 install --no-cache https://developer.download.nvidia.com/compute/redist/jp/v60/pytorch/torch-2.3.0a0+ebedce2.nv24.02-cp310-cp310-linux_aarch64.whl"
+        log_error "  CUDA not found in /usr/local/cuda*"
+        log_error "  JetPack may not be properly installed"
+        log_error "  Install JetPack via SDK Manager or flash the device"
+        exit 1
+    fi
+
+    # Check cuDNN
+    CUDNN_VERSION=$(python3 -c "
+import ctypes
+try:
+    cudnn = ctypes.CDLL('libcudnn.so')
+    print('installed')
+except:
+    print('not found')
+" 2>/dev/null)
+
+    if [ "$CUDNN_VERSION" = "installed" ]; then
+        # Try to get version from header or dpkg
+        CUDNN_VER=$(dpkg -l 2>/dev/null | grep cudnn | head -1 | awk '{print $3}' | cut -d'-' -f1 || echo "unknown")
+        log_info "  [OK] cuDNN: $CUDNN_VER"
+    else
+        log_warn "  cuDNN library not found"
+        log_warn "  Installing cuDNN (if available via apt)..."
+        sudo apt-get update && sudo apt-get install -y libcudnn8 libcudnn8-dev 2>/dev/null || {
+            log_warn "  cuDNN not available via apt. It should come with JetPack."
+            log_warn "  If you're on JetPack 6.x, cuDNN 9.x should already be installed."
+        }
+    fi
+
+    # Verify nvidia-smi
+    if command -v nvidia-smi &> /dev/null; then
+        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+        DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+        log_info "  [OK] GPU: $GPU_NAME (Driver: $DRIVER_VER)"
+    else
+        log_warn "  nvidia-smi not found"
+    fi
+
+    log_info "Checking PyTorch CUDA support..."
+
+    # Check if PyTorch has CUDA support (not just installed)
+    TORCH_CUDA=$(python3 -c "import torch; print(torch.version.cuda or 'None')" 2>/dev/null || echo "None")
+    TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)" 2>/dev/null || echo "None")
+
+    if [ "$TORCH_CUDA" != "None" ] && [ "$TORCH_CUDA" != "" ]; then
+        log_info "  [OK] PyTorch ${TORCH_VERSION} with CUDA ${TORCH_CUDA}"
+    else
+        if [ "$TORCH_VERSION" != "None" ]; then
+            log_warn "  PyTorch ${TORCH_VERSION} found but NO CUDA support (CPU-only)"
+            log_warn "  Uninstalling CPU-only PyTorch..."
+            pip3 uninstall -y torch torchvision 2>/dev/null || true
+        fi
+
+        log_info "Installing NVIDIA PyTorch for Jetson (JetPack 6.x)..."
+        log_info "  This may take a few minutes..."
+
+        # PyTorch 2.3.0 wheel for JetPack 6.x (L4T R36.x, CUDA 12.x)
+        # Source: https://forums.developer.nvidia.com/t/pytorch-for-jetson/
+        TORCH_WHEEL_URL="https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl"
+        TORCH_WHEEL="/tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl"
+
+        log_info "  Downloading PyTorch wheel..."
+        wget -q --show-progress -O "$TORCH_WHEEL" "$TORCH_WHEEL_URL" || {
+            log_error "Failed to download PyTorch wheel"
+            log_error "Manual install: pip3 install --no-cache $TORCH_WHEEL_URL"
+            exit 1
+        }
+
+        log_info "  Installing PyTorch..."
+        pip3 install --no-cache-dir "$TORCH_WHEEL" || {
+            log_error "Failed to install PyTorch"
+            exit 1
+        }
+        rm -f "$TORCH_WHEEL"
+
+        # Verify CUDA is now available
+        TORCH_CUDA_CHECK=$(python3 -c "import torch; print(torch.version.cuda or 'None')" 2>/dev/null || echo "None")
+        if [ "$TORCH_CUDA_CHECK" != "None" ]; then
+            log_info "  [OK] PyTorch installed with CUDA ${TORCH_CUDA_CHECK}"
+        else
+            log_error "  PyTorch installed but CUDA still not available"
+            log_error "  This may indicate a JetPack/CUDA version mismatch"
+        fi
+
+        # Build torchvision from source (required for NVIDIA PyTorch ABI compatibility)
+        log_info "Building torchvision from source (required for Jetson)..."
+        sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+            libjpeg-dev zlib1g-dev libpython3-dev libopenblas-dev \
+            libavcodec-dev libavformat-dev libswscale-dev || true
+
+        TORCHVISION_DIR="/tmp/torchvision_build"
+        rm -rf "$TORCHVISION_DIR"
+        git clone --depth 1 --branch v0.18.0 https://github.com/pytorch/vision.git "$TORCHVISION_DIR"
+        cd "$TORCHVISION_DIR"
+
+        log_info "  Compiling torchvision (this takes a while)..."
+        TORCH_CUDA_ARCH_LIST="8.7" FORCE_CUDA=1 python3 setup.py bdist_wheel 2>&1 | tail -5
+        pip3 install --no-cache-dir dist/*.whl || {
+            log_warn "  torchvision build failed, trying pip install..."
+            pip3 install torchvision
+        }
+        cd - > /dev/null
+        rm -rf "$TORCHVISION_DIR"
+
+        log_info "  [OK] torchvision installed"
     fi
 else
     log_info "Detected x86_64 architecture"
