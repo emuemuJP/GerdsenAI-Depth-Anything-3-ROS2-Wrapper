@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DA3 RViz2 Viewer
+Comment=Open RViz2 with Depth Anything V3 configuration
+Exec=bash -c "source /opt/ros/humble/setup.bash && rviz2 -d ~/depth_anything_3_ros2/rviz/depth_view.rviz"
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Development;Science;
+Keywords=rviz;visualization;depth;ROS2;
