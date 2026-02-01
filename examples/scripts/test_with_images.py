@@ -18,7 +18,10 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
-    from depth_anything_3_ros2.da3_inference import DA3InferenceWrapper
+    from depth_anything_3_ros2.da3_inference import (
+        DA3InferenceWrapper,
+        SharedMemoryInference,
+    )
     from depth_anything_3_ros2.utils import colorize_depth, normalize_depth
 except ImportError:
     print("Error: Could not import depth_anything_3_ros2 package")
@@ -31,7 +34,7 @@ except ImportError:
 
 def process_image(
     image_path: Path,
-    model: DA3InferenceWrapper,
+    model,
     output_dir: Path = None,
     colormap: str = 'turbo'
 ) -> dict:
@@ -165,18 +168,32 @@ def main():
     if not args.image and not args.input_dir:
         parser.error('Must specify either --image or --input-dir')
 
-    # Initialize model
-    print(f"Loading model: {args.model}")
-    print(f"Device: {args.device}")
+    # Initialize model - prefer TRT service, fallback to PyTorch
+    model = None
 
+    # Try TRT service first (fast path via shared memory)
     try:
-        model = DA3InferenceWrapper(
-            model_name=args.model,
-            device=args.device
-        )
+        shm_model = SharedMemoryInference(timeout=2.0)
+        if shm_model.is_service_available:
+            print("Using TRT inference service (host)")
+            model = shm_model
     except Exception as e:
-        print(f"Error loading model: {e}")
-        sys.exit(1)
+        print(f"TRT service check failed: {e}")
+
+    # Fallback to PyTorch if TRT service not available
+    if model is None:
+        print(f"TRT service unavailable, using PyTorch...")
+        print(f"Loading model: {args.model}")
+        print(f"Device: {args.device}")
+
+        try:
+            model = DA3InferenceWrapper(
+                model_name=args.model,
+                device=args.device
+            )
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            sys.exit(1)
 
     # Collect images to process
     images = []
