@@ -270,7 +270,8 @@ RUN pip3 install --no-cache-dir \
     "opencv-python>=4.8.0" \
     "pillow>=10.0.0" \
     "numpy>=1.24.0,<2.0" \
-    "timm>=0.9.0"
+    "timm>=0.9.0" \
+    "safetensors>=0.4.0"
 
 # Install Depth Anything 3
 # NOTE: Installing with --no-deps because pycolmap/open3d don't have ARM64 wheels.
