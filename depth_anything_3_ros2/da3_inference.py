@@ -327,45 +327,55 @@ class DA3InferenceWrapper:
                     "using direct model loading..."
                 )
 
-            # Fallback: Load model directly without api module
-            # This avoids pycolmap/open3d dependencies
+            # Fallback: Load model directly using registry (avoids api.py)
+            # This avoids pycolmap/moviepy/open3d dependencies in api.py
             from huggingface_hub import hf_hub_download
             from safetensors.torch import load_file
             import json
+            from depth_anything_3.cfg import create_object, load_config
+            from depth_anything_3.registry import MODEL_REGISTRY
 
             logger.info(
                 f"Loading model '{self.model_name}' directly from HuggingFace..."
             )
 
-            # Download config and weights
+            # Download config to get model_name for registry
             config_path = hf_hub_download(
                 repo_id=self.model_name,
                 filename="config.json",
                 cache_dir=self.cache_dir,
             )
+
+            # Load HF config to get registry model name
+            with open(config_path) as f:
+                hf_config = json.load(f)
+
+            # Map HuggingFace model to registry name (e.g., "da3-base")
+            registry_name = hf_config.get("model_name", "da3-base")
+            if registry_name not in MODEL_REGISTRY:
+                # Fallback mapping for common names
+                name_map = {
+                    "DA3-BASE": "da3-base",
+                    "DA3-SMALL": "da3-small",
+                    "DA3-LARGE": "da3-large",
+                    "DA3-GIANT": "da3-giant",
+                }
+                registry_name = name_map.get(
+                    registry_name.upper(), registry_name.lower()
+                )
+
+            # Create model from registry config
+            config = load_config(MODEL_REGISTRY[registry_name])
+            self._model = create_object(config)
+
+            # Download and load weights
             weights_path = hf_hub_download(
                 repo_id=self.model_name,
                 filename="model.safetensors",
                 cache_dir=self.cache_dir,
             )
-
-            # Load config
-            with open(config_path) as f:
-                config = json.load(f)
-
-            # Import model class directly (avoids api.py)
-            from depth_anything_3.model.da3 import DepthAnything3Net
-
-            # Create model from config
-            self._model = DepthAnything3Net(
-                encoder=config.get("encoder", "vitl"),
-                features=config.get("features", 256),
-                out_channels=config.get("out_channels", [256, 512, 1024, 1024]),
-            )
-
-            # Load weights
             state_dict = load_file(weights_path)
-            self._model.load_state_dict(state_dict)
+            self._model.load_state_dict(state_dict, strict=False)
 
             # Move to device and set eval mode
             self._model = self._model.to(device=self.device)
