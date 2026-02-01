@@ -767,6 +767,16 @@ Docker configuration files are provided for building and deploying on both CPU a
 
 > **Important**: No pre-built Docker images are published to Docker Hub or any container registry. You must build the images locally using `docker-compose build` or `docker-compose up` (which auto-builds).
 
+### Prerequisites
+
+Ensure your user can run Docker without `sudo`:
+
+```bash
+sudo usermod -aG docker $USER
+# Log out and back in, or run: newgrp docker
+# Verify: docker run hello-world
+```
+
 ### Complete Docker Installation (3 Steps)
 
 ```bash
