@@ -196,27 +196,19 @@ except:
             pip3 uninstall -y torch torchvision 2>/dev/null || true
         fi
 
-        log_info "Installing NVIDIA PyTorch for Jetson (JetPack 6.x)..."
-        log_info "  This may take a few minutes..."
+        log_info "Installing NVIDIA PyTorch for Jetson (JetPack 6.2+)..."
+        log_info "  Using Jetson AI Lab PyPI repository (cuDNN 9 compatible)..."
 
-        # PyTorch 2.3.0 wheel for JetPack 6.x (L4T R36.x, CUDA 12.x)
-        # Source: https://forums.developer.nvidia.com/t/pytorch-for-jetson/
-        TORCH_WHEEL_URL="https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl"
-        TORCH_WHEEL="/tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl"
-
-        log_info "  Downloading PyTorch wheel..."
-        wget -q --show-progress -O "$TORCH_WHEEL" "$TORCH_WHEEL_URL" || {
-            log_error "Failed to download PyTorch wheel"
-            log_error "Manual install: pip3 install --no-cache $TORCH_WHEEL_URL"
+        # JetPack 6.2+ uses cuDNN 9.x - requires wheels from Jetson AI Lab
+        # Source: https://pypi.jetson-ai-lab.io/jp6/cu126
+        pip3 install --no-cache-dir \
+            torch==2.5.0 torchvision==0.20.0 \
+            --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126 || {
+            log_error "Failed to install PyTorch from Jetson AI Lab"
+            log_error "Manual install:"
+            log_error "  pip3 install torch==2.5.0 torchvision==0.20.0 --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126"
             exit 1
         }
-
-        log_info "  Installing PyTorch..."
-        pip3 install --no-cache-dir "$TORCH_WHEEL" || {
-            log_error "Failed to install PyTorch"
-            exit 1
-        }
-        rm -f "$TORCH_WHEEL"
 
         # Verify CUDA is now available
         TORCH_CUDA_CHECK=$(python3 -c "import torch; print(torch.version.cuda or 'None')" 2>/dev/null || echo "None")
@@ -226,28 +218,6 @@ except:
             log_error "  PyTorch installed but CUDA still not available"
             log_error "  This may indicate a JetPack/CUDA version mismatch"
         fi
-
-        # Build torchvision from source (required for NVIDIA PyTorch ABI compatibility)
-        log_info "Building torchvision from source (required for Jetson)..."
-        sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-            libjpeg-dev zlib1g-dev libpython3-dev libopenblas-dev \
-            libavcodec-dev libavformat-dev libswscale-dev || true
-
-        TORCHVISION_DIR="/tmp/torchvision_build"
-        rm -rf "$TORCHVISION_DIR"
-        git clone --depth 1 --branch v0.18.0 https://github.com/pytorch/vision.git "$TORCHVISION_DIR"
-        cd "$TORCHVISION_DIR"
-
-        log_info "  Compiling torchvision (this takes a while)..."
-        TORCH_CUDA_ARCH_LIST="8.7" FORCE_CUDA=1 python3 setup.py bdist_wheel 2>&1 | tail -5
-        pip3 install --no-cache-dir dist/*.whl || {
-            log_warn "  torchvision build failed, trying pip install..."
-            pip3 install torchvision
-        }
-        cd - > /dev/null
-        rm -rf "$TORCHVISION_DIR"
-
-        log_info "  [OK] torchvision installed"
     fi
 else
     log_info "Detected x86_64 architecture"
