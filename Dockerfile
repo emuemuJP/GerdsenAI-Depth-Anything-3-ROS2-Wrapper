@@ -328,6 +328,9 @@ WORKDIR /ros2_ws
 # Copy package source
 COPY . /ros2_ws/src/depth_anything_3_ros2
 
+# Fix Windows line endings on all Python scripts and shell scripts
+RUN find /ros2_ws/src/depth_anything_3_ros2 -type f \( -name "*.py" -o -name "*.sh" \) -exec sed -i 's/\r$//' {} \;
+
 # Source ROS2 and build package
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
     colcon build --packages-select depth_anything_3_ros2 && \
