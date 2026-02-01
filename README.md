@@ -131,7 +131,9 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
   - [What Gets Installed](#what-gets-installed)
   - [Offline Operation](#offline-operation-robots-without-internet)
 - [Installation](#installation)
-  - [Native Installation](#installation)
+  - [Quick Install (Recommended)](#quick-install-recommended)
+  - [Prerequisites](#prerequisites)
+  - [Manual Installation](#manual-installation)
   - [Docker Installation](#docker-deployment)
 - [Hardware Detection and Model Setup](#hardware-detection-and-model-setup)
   - [Interactive Setup Script](#interactive-setup-script)
@@ -139,6 +141,8 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
   - [Model Licensing](#model-licensing)
 - [Quick Start](#quick-start)
 - [Demo Mode (Jetson Deployment)](#demo-mode-jetson-deployment)
+  - [Full RViz Demo (Ubuntu Desktop)](#full-rviz-demo-ubuntu-desktop)
+  - [TensorRT Demo (Jetson)](#tensorrt-demo-jetson)
   - [RViz2 Visualization](#rviz2-visualization)
   - [Desktop Shortcuts](#desktop-shortcuts)
   - [Performance Monitor](#performance-monitor)
@@ -157,6 +161,33 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
 ---
 
 ## Installation
+
+### Quick Install (Recommended)
+
+For the fastest setup, use our automated installation script:
+
+```bash
+# Clone the repository
+git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
+cd GerdsenAI-Depth-Anything-3-ROS2-Wrapper
+
+# Run the dependency installer (handles everything automatically)
+bash scripts/install_dependencies.sh
+
+# Source the workspace
+source install/setup.bash
+
+# Run the demo
+./GerdsenAI-DA3-ROS2-Wrapper-demo_rviz_full.sh
+```
+
+The installation script automatically:
+- Detects your ROS2 distribution (Humble/Jazzy/Iron)
+- Installs all ROS2 packages (cv-bridge, rviz2, image-publisher, etc.)
+- Installs Python dependencies (PyTorch, OpenCV, transformers, etc.)
+- Installs the Depth Anything 3 package from ByteDance
+- Builds the ROS2 workspace
+- Downloads sample images
 
 ### Prerequisites
 
@@ -179,7 +210,11 @@ nvidia-smi  # Verify CUDA installation
 - Required for Step 5 (model weights download from Hugging Face Hub)
 - See [Offline Operation](#offline-operation-robots-without-internet) if deploying to robots without internet
 
-### Step 1: Install ROS2 Dependencies
+### Manual Installation
+
+If you prefer manual installation or the script fails:
+
+#### Step 1: Install ROS2 Dependencies
 
 ```bash
 sudo apt install -y \
@@ -187,10 +222,13 @@ sudo apt install -y \
   ros-humble-sensor-msgs \
   ros-humble-std-msgs \
   ros-humble-image-transport \
+  ros-humble-image-publisher \
+  ros-humble-rviz2 \
+  ros-humble-rqt-image-view \
   ros-humble-rclpy
 ```
 
-### Step 2: Install Python Dependencies
+#### Step 2: Install Python Dependencies
 
 ```bash
 # Create and activate a virtual environment (recommended)
@@ -219,7 +257,7 @@ pip3 install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
-### Step 3: Clone and Build This ROS2 Wrapper
+#### Step 3: Clone and Build This ROS2 Wrapper
 
 ```bash
 # Navigate to your ROS2 workspace
@@ -433,6 +471,38 @@ ros2 launch depth_anything_3_ros2 image_publisher_test.launch.py \
 ---
 
 ## Demo Mode (Jetson Deployment)
+
+### Full RViz Demo (Ubuntu Desktop)
+
+For a complete demonstration with multiple monitoring terminals and RViz2 visualization:
+
+```bash
+cd ~/depth_anything_3_ros2
+./GerdsenAI-DA3-ROS2-Wrapper-demo_rviz_full.sh
+```
+
+This script automatically:
+1. Sources ROS2 (Humble/Jazzy/Iron) if not already sourced
+2. Builds the workspace if not already built
+3. Installs missing dependencies (e.g., ros-humble-image-publisher)
+4. Downloads sample images if needed
+5. Opens 5 gnome-terminal windows:
+   - Terminal 1: Node + Image Publisher (main depth estimation)
+   - Terminal 2: RViz2 visualization
+   - Terminal 3: Topic monitoring (frequency, messages)
+   - Terminal 4: Parameter inspection
+   - Terminal 5: Additional topics (confidence, colored depth)
+6. Logs all output to `/tmp/da3_demo_logs/` for debugging
+7. Clean shutdown with Ctrl+C
+
+**Requirements**: Ubuntu with gnome-terminal, ROS2 Humble/Jazzy installed in /opt/ros/
+
+**Troubleshooting**: If Terminal 1 crashes, check the log:
+```bash
+cat /tmp/da3_demo_logs/node_*.log
+```
+
+### TensorRT Demo (Jetson)
 
 For Jetson users, we provide a single-command demo script that handles everything automatically:
 
