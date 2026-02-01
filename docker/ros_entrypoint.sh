@@ -5,7 +5,12 @@
 set -e
 
 # Source ROS2 environment
-source /opt/ros/humble/setup.bash
+# Handle both standard ROS2 and dustynv Jetson image paths
+if [ -f /opt/ros/humble/install/setup.bash ]; then
+    source /opt/ros/humble/install/setup.bash
+elif [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
+fi
 
 # Source workspace if it exists
 if [ -f /ros2_ws/install/setup.bash ]; then

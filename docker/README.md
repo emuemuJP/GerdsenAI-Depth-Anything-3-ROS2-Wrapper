@@ -8,6 +8,21 @@ This guide explains how to build and run the Depth Anything 3 ROS2 wrapper using
 - Docker Compose 2.0+
 - For GPU support: NVIDIA Docker runtime (`nvidia-docker2`)
 
+### Adding User to Docker Group
+
+To run Docker commands without `sudo`, add your user to the docker group:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+**Important**: Log out and back in for group changes to take effect, or run:
+```bash
+newgrp docker
+```
+
+Verify with: `docker run hello-world`
+
 ### Installing NVIDIA Docker Runtime
 
 ```bash
@@ -258,6 +273,14 @@ xhost +local:docker
 
 # Check DISPLAY variable inside container
 echo $DISPLAY
+```
+
+### Permission Denied for Docker Socket
+```bash
+# Error: permission denied while trying to connect to the Docker daemon socket
+# Add user to docker group:
+sudo usermod -aG docker $USER
+# Log out and back in, or run: newgrp docker
 ```
 
 ### Permission Denied for Camera

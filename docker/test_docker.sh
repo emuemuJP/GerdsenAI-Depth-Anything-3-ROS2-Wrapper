@@ -68,6 +68,17 @@ test_docker_installed() {
         print_failure "Docker not installed"
         exit 1
     fi
+
+    # Check docker group membership / permissions
+    if ! docker info &> /dev/null; then
+        print_failure "Cannot connect to Docker daemon (permission denied)"
+        echo ""
+        echo "Add your user to the docker group:"
+        echo "  sudo usermod -aG docker \$USER"
+        echo "Then log out and back in, or run: newgrp docker"
+        exit 1
+    fi
+    print_success "Docker daemon accessible"
 }
 
 # Test 2: Check Docker Compose installation
