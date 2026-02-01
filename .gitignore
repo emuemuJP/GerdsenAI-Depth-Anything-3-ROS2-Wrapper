@@ -58,3 +58,6 @@ huggingface/
 
 nul
 
+
+# Claude AI
+.claude/
