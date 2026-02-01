@@ -156,6 +156,15 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Check docker group membership
+if ! docker info &> /dev/null; then
+    echo -e "${RED}ERROR: Cannot connect to Docker daemon${NC}"
+    echo "       Add your user to the docker group:"
+    echo "         sudo usermod -aG docker \$USER"
+    echo "       Then log out and back in, or run: newgrp docker"
+    exit 1
+fi
+
 # Check nvidia-docker
 if ! docker info 2>/dev/null | grep -q "nvidia"; then
     echo -e "${YELLOW}WARNING: NVIDIA Docker runtime may not be configured${NC}"
@@ -435,8 +444,9 @@ echo "  Container: $CONTAINER_NAME"
 echo ""
 
 # Launch container in background
+# Note: dustynv Jetson images use /opt/ros/humble/install/setup.bash
 docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" \
-    bash -c "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && $FULL_CMD" &
+    bash -c "source /opt/ros/humble/install/setup.bash && source /ros2_ws/install/setup.bash && $FULL_CMD" &
 CONTAINER_PID=$!
 
 # Wait for container to start
