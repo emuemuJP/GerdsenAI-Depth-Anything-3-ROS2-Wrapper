@@ -102,7 +102,19 @@ mkdir -p "$ONNX_DIR" "$TRT_DIR"
 if [ ! -f "$ONNX_MODEL" ]; then
     echo "       Downloading from HuggingFace..."
 
-    # Check for huggingface-cli
+    # Auto-install huggingface_hub if not available
+    if ! command -v huggingface-cli &> /dev/null; then
+        echo "       Installing huggingface_hub..."
+        pip3 install huggingface_hub 2>&1 | tail -1
+    fi
+
+    # Auto-install onnx if not available
+    if ! python3 -c "import onnx" 2>/dev/null; then
+        echo "       Installing onnx..."
+        pip3 install onnx 2>&1 | tail -1
+    fi
+
+    # Download model
     if command -v huggingface-cli &> /dev/null; then
         huggingface-cli download onnx-community/depth-anything-v3-small \
             --local-dir "$ONNX_DIR/hf-download" \
@@ -117,9 +129,8 @@ onnx.save(model, '$ONNX_MODEL', save_as_external_data=False)
 print('       Created: $ONNX_MODEL')
 "
     else
-        echo -e "${RED}ERROR: huggingface-cli not found${NC}"
-        echo "       Install with: pip install huggingface_hub"
-        echo "       Or manually download ONNX model to: $ONNX_MODEL"
+        echo -e "${RED}ERROR: Failed to install huggingface_hub${NC}"
+        echo "       Try manually: pip3 install huggingface_hub"
         exit 1
     fi
 fi
