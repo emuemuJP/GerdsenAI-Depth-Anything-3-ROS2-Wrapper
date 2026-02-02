@@ -22,7 +22,7 @@
 
 ---
 
-## Phase 2: Host-Container Split Architecture [IN PROGRESS]
+## Phase 2: Host-Container Split Architecture [COMPLETE]
 
 **Problem:** Container TensorRT Python bindings are broken:
 - `dustynv/l4t-pytorch:r36.4.0` - TRT import fails ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714))
@@ -40,18 +40,29 @@ HOST (TRT 10.3)                    CONTAINER (ROS2)
 +------------------+               +------------------+
 ```
 
-### Files to Create (Claude Code)
-- [ ] `scripts/trt_inference_service.py` - Host TRT service
-- [ ] Update `da3_inference.py` - Add SharedMemoryInference class
-- [ ] Update `deploy_jetson.sh` - Start host service + container
+### Implementation (Complete)
+- [x] `scripts/trt_inference_service.py` - Host TRT service with file-based IPC
+- [x] `depth_anything_3_ros2/da3_inference.py` - SharedMemoryInference class with PyTorch fallback
+- [x] `scripts/deploy_jetson.sh --host-trt` - Orchestrates host service + container startup
 
 ### Communication Protocol
 | File | Direction | Format |
 |------|-----------|--------|
 | `/tmp/da3_shared/input.npy` | Container -> Host | float32 [1,1,3,518,518] |
 | `/tmp/da3_shared/output.npy` | Host -> Container | float32 [1,518,518] |
-| `/tmp/da3_shared/request.flag` | Container -> Host | Signal file |
-| `/tmp/da3_shared/ready.flag` | Host -> Container | Signal file |
+| `/tmp/da3_shared/request` | Container -> Host | Timestamp signal |
+| `/tmp/da3_shared/status` | Host -> Container | "ready", "complete:time", "error:msg" |
+
+### Deployment
+```bash
+# Fresh Jetson deployment
+cd ~
+rm -rf ~/depth_anything_3_ros2 ~/ros2_ws ~/da3_fresh_test
+git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git depth_anything_3_ros2
+cd depth_anything_3_ros2
+pip3 install pycuda --break-system-packages
+bash scripts/deploy_jetson.sh --host-trt
+```
 
 ---
 
@@ -82,4 +93,4 @@ HOST (TRT 10.3)                    CONTAINER (ROS2)
 
 ---
 
-**Last Updated:** 2026-01-31
+**Last Updated:** 2026-02-02

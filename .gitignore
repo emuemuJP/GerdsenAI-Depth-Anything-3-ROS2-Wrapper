@@ -62,3 +62,4 @@ nul
 # Claude AI
 .claude/
 CLAUDE.md
+.DS_Store
