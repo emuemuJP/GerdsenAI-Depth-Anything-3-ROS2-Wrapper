@@ -131,11 +131,16 @@ class DepthAnything3NodeOptimized(Node):
         """Declare all ROS2 parameters."""
         # Model configuration
         self.declare_parameter("model_name", "depth-anything/DA3-SMALL")
-        # Backend options: pytorch, tensorrt_fp16, tensorrt_int8
-        self.declare_parameter("backend", "pytorch")
+        # Backend options: pytorch, tensorrt_fp16, tensorrt_int8, tensorrt_native
+        # tensorrt_native is recommended for production Jetson deployment
+        self.declare_parameter("backend", "tensorrt_native")
         self.declare_parameter("device", "cuda")
         self.declare_parameter("cache_dir", "")
+        # Path to TensorRT engine file (.engine) for tensorrt_native backend
+        # Build with: python scripts/build_tensorrt_engine.py --auto
         self.declare_parameter("trt_model_path", "")
+        # Auto-detect and build TensorRT engine if not found
+        self.declare_parameter("auto_build_engine", False)
 
         # Image processing
         self.declare_parameter("model_input_height", 384)
@@ -171,6 +176,11 @@ class DepthAnything3NodeOptimized(Node):
         self.cache_dir = cache_dir_param if cache_dir_param else None
         trt_path_param = self.get_parameter("trt_model_path").value
         self.trt_model_path = trt_path_param if trt_path_param else None
+        self.auto_build_engine = self.get_parameter("auto_build_engine").value
+
+        # Handle TensorRT backend requirements
+        if self.backend in ["tensorrt_native", "tensorrt_fp16", "tensorrt_int8"]:
+            self._handle_tensorrt_backend()
 
         # Image processing
         input_h = self.get_parameter("model_input_height").value
@@ -199,6 +209,95 @@ class DepthAnything3NodeOptimized(Node):
         # Performance
         self.queue_size = self.get_parameter("queue_size").value
         self.log_inference_time = self.get_parameter("log_inference_time").value
+
+    def _handle_tensorrt_backend(self) -> None:
+        """Handle TensorRT backend initialization and auto-build if needed."""
+        import os
+        from pathlib import Path
+
+        # Check if engine path is provided and exists
+        if self.trt_model_path:
+            engine_path = Path(self.trt_model_path)
+            if engine_path.exists():
+                self.get_logger().info(f"Using TensorRT engine: {engine_path}")
+                return
+
+            self.get_logger().warning(
+                f"TensorRT engine not found: {engine_path}"
+            )
+
+        # Try to find existing engine in default location
+        default_engine_dir = Path(__file__).parent.parent / "models" / "tensorrt"
+        if default_engine_dir.exists():
+            engines = list(default_engine_dir.glob("*.engine"))
+            if engines:
+                # Use the most recently modified engine
+                latest_engine = max(engines, key=lambda p: p.stat().st_mtime)
+                self.trt_model_path = str(latest_engine)
+                self.get_logger().info(
+                    f"Found existing TensorRT engine: {latest_engine}"
+                )
+                return
+
+        # Auto-build engine if enabled
+        if self.auto_build_engine:
+            self.get_logger().info("Auto-building TensorRT engine...")
+            engine_path = self._auto_build_tensorrt_engine()
+            if engine_path:
+                self.trt_model_path = str(engine_path)
+                return
+
+        # Fallback to PyTorch if no engine available
+        if self.backend == "tensorrt_native":
+            self.get_logger().warning(
+                "No TensorRT engine available. Falling back to PyTorch backend. "
+                "Build engine with: python scripts/build_tensorrt_engine.py --auto"
+            )
+            self.backend = "pytorch"
+
+    def _auto_build_tensorrt_engine(self):
+        """Auto-build TensorRT engine for the current platform."""
+        try:
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            build_script = Path(__file__).parent.parent / "scripts" / "build_tensorrt_engine.py"
+
+            if not build_script.exists():
+                self.get_logger().error(
+                    f"Build script not found: {build_script}"
+                )
+                return None
+
+            self.get_logger().info("Running TensorRT engine build (this may take several minutes)...")
+
+            result = subprocess.run(
+                [sys.executable, str(build_script), "--auto"],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout
+            )
+
+            if result.returncode == 0:
+                # Find the built engine
+                engine_dir = Path(__file__).parent.parent / "models" / "tensorrt"
+                engines = list(engine_dir.glob("*.engine"))
+                if engines:
+                    latest_engine = max(engines, key=lambda p: p.stat().st_mtime)
+                    self.get_logger().info(f"Built TensorRT engine: {latest_engine}")
+                    return latest_engine
+            else:
+                self.get_logger().error(
+                    f"TensorRT build failed: {result.stderr}"
+                )
+
+        except subprocess.TimeoutExpired:
+            self.get_logger().error("TensorRT build timed out")
+        except Exception as e:
+            self.get_logger().error(f"Failed to auto-build TensorRT engine: {e}")
+
+        return None
 
     def _setup_async_colorization(self) -> None:
         """Setup async colorization thread."""

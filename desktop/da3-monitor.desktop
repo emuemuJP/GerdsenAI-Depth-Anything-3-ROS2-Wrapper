@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DA3 Performance Monitor
+Comment=View Depth Anything V3 performance metrics
+Exec=bash -c "cd ~/depth_anything_3_ros2 && bash scripts/performance_monitor.sh"
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;Science;
+Keywords=performance;monitor;FPS;GPU;

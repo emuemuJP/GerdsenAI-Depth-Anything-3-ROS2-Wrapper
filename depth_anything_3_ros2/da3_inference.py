@@ -3,15 +3,225 @@ Depth Anything 3 Inference Wrapper.
 
 This module provides a wrapper around the Depth Anything 3 model for efficient
 depth estimation with CUDA support and CPU fallback.
+
+Supports multiple backends:
+- PyTorch: Default, runs on GPU/CPU
+- SharedMemory: Communicates with host TensorRT service for TRT 10.3 inference
 """
 
 import logging
+import os
+import time
+from pathlib import Path
 from typing import Optional, Dict
 import numpy as np
 import torch
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+
+# Shared memory paths for host-container TRT communication
+SHARED_DIR = Path("/tmp/da3_shared")
+INPUT_PATH = SHARED_DIR / "input.npy"
+OUTPUT_PATH = SHARED_DIR / "output.npy"
+STATUS_PATH = SHARED_DIR / "status"
+REQUEST_PATH = SHARED_DIR / "request"
+
+
+class SharedMemoryInference:
+    """
+    Shared memory inference client for host-container TRT communication.
+
+    This class runs inside the container and communicates with the host-side
+    TensorRT inference service via shared files.
+
+    Architecture:
+        [Container: ROS2 Node] <-- /tmp/da3_shared --> [Host: TRT Inference Service]
+
+    The host service runs TensorRT 10.3 which can load DA3 engines.
+    The container runs ROS2 with TRT 8.6.2 which cannot load TRT 10.3 engines.
+    """
+
+    def __init__(
+        self,
+        timeout: float = 1.0,
+        fallback_wrapper: Optional["DA3InferenceWrapper"] = None,
+    ):
+        """
+        Initialize shared memory inference client.
+
+        Args:
+            timeout: Max wait time for inference response (seconds)
+            fallback_wrapper: Optional PyTorch wrapper to use if service unavailable
+        """
+        self.timeout = timeout
+        self.fallback_wrapper = fallback_wrapper
+        self._service_available = False
+        self._last_check = 0
+        self._check_interval = 5.0  # Re-check service every 5 seconds
+
+        # Ensure shared directory exists
+        SHARED_DIR.mkdir(parents=True, exist_ok=True)
+
+        self._check_service()
+
+    def _check_service(self) -> bool:
+        """Check if host TRT service is available."""
+        now = time.time()
+        if now - self._last_check < self._check_interval:
+            return self._service_available
+
+        self._last_check = now
+
+        if STATUS_PATH.exists():
+            status = STATUS_PATH.read_text().strip()
+            self._service_available = status.startswith(
+                "ready"
+            ) or status.startswith("complete")
+            if self._service_available:
+                logger.info("Host TRT inference service detected")
+        else:
+            self._service_available = False
+
+        return self._service_available
+
+    def inference(
+        self,
+        image: np.ndarray,
+        return_confidence: bool = True,
+        return_camera_params: bool = False,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Run inference via shared memory communication with host TRT service.
+
+        Args:
+            image: Input RGB image as numpy array (H, W, 3) with values in [0, 255]
+            return_confidence: Whether to return confidence map
+            return_camera_params: Whether to return camera extrinsics and intrinsics
+
+        Returns:
+            Dictionary containing depth map and optionally confidence/camera params
+
+        Raises:
+            RuntimeError: If inference fails and no fallback available
+        """
+        # Check if service is available
+        if not self._check_service():
+            if self.fallback_wrapper:
+                logger.debug("TRT service unavailable, using PyTorch fallback")
+                return self.fallback_wrapper.inference(
+                    image, return_confidence, return_camera_params
+                )
+            raise RuntimeError(
+                "Host TRT service not available and no fallback configured"
+            )
+
+        try:
+            return self._inference_via_shared_memory(image)
+        except Exception as e:
+            logger.warning(f"Shared memory inference failed: {e}")
+            if self.fallback_wrapper:
+                logger.info("Falling back to PyTorch inference")
+                return self.fallback_wrapper.inference(
+                    image, return_confidence, return_camera_params
+                )
+            raise
+
+    def _inference_via_shared_memory(self, image: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Perform inference via shared memory files.
+
+        Protocol:
+        1. Preprocess image to tensor format expected by TRT engine
+        2. Write tensor to INPUT_PATH
+        3. Write timestamp to REQUEST_PATH to signal new request
+        4. Wait for STATUS_PATH to show "complete"
+        5. Read depth from OUTPUT_PATH
+        """
+        # Preprocess image to tensor format
+        # DA3 expects: (1, 1, 3, H, W) normalized float32
+        input_tensor = self._preprocess_image(image)
+
+        # Write input tensor
+        np.save(INPUT_PATH, input_tensor)
+
+        # Signal new request with timestamp
+        REQUEST_PATH.write_text(str(time.time()))
+
+        # Wait for completion
+        start_time = time.time()
+        while time.time() - start_time < self.timeout:
+            if STATUS_PATH.exists():
+                status = STATUS_PATH.read_text().strip()
+                if status.startswith("complete"):
+                    break
+                elif status.startswith("error"):
+                    raise RuntimeError(f"Host TRT service error: {status}")
+            time.sleep(0.001)  # 1ms poll interval
+        else:
+            raise TimeoutError(
+                f"TRT inference timeout after {self.timeout}s"
+            )
+
+        # Read output
+        if not OUTPUT_PATH.exists():
+            raise RuntimeError("Output file not created by TRT service")
+
+        depth = np.load(OUTPUT_PATH)
+
+        # Remove batch dimensions if present
+        while depth.ndim > 2:
+            depth = depth[0]
+
+        # Build result
+        result = {"depth": depth.astype(np.float32)}
+
+        # Note: Confidence and camera params not available from TRT engine
+        # Could be added by extending the host service
+
+        return result
+
+    def _preprocess_image(self, image: np.ndarray) -> np.ndarray:
+        """
+        Preprocess image for TensorRT inference.
+
+        Args:
+            image: RGB image (H, W, 3) uint8
+
+        Returns:
+            Preprocessed tensor (1, 1, 3, 518, 518) float32 normalized
+        """
+        from PIL import Image as PILImage
+        import cv2
+
+        # Target size for DA3
+        target_size = (518, 518)
+
+        # Resize
+        if image.shape[:2] != target_size:
+            image = cv2.resize(image, target_size, interpolation=cv2.INTER_LINEAR)
+
+        # Convert to float and normalize
+        tensor = image.astype(np.float32) / 255.0
+
+        # Normalize with ImageNet stats
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        tensor = (tensor - mean) / std
+
+        # Rearrange to (C, H, W)
+        tensor = tensor.transpose(2, 0, 1)
+
+        # Add batch dimensions: (1, 1, 3, H, W) for DA3 ONNX format
+        tensor = tensor[np.newaxis, np.newaxis, ...]
+
+        return tensor.astype(np.float32)
+
+    @property
+    def is_service_available(self) -> bool:
+        """Check if host TRT service is currently available."""
+        return self._check_service()
 
 
 class DA3InferenceWrapper:
@@ -95,22 +305,83 @@ class DA3InferenceWrapper:
             RuntimeError: If model loading fails
         """
         try:
-            # Import DepthAnything3 from the official package
-            from depth_anything_3.api import DepthAnything3
+            # Try loading via depth_anything_3.api first (full installation)
+            try:
+                from depth_anything_3.api import DepthAnything3
 
-            logger.info(f"Loading model '{self.model_name}' from Hugging Face Hub...")
-
-            # Load model with optional cache directory
-            if self.cache_dir:
-                self._model = DepthAnything3.from_pretrained(
-                    self.model_name, cache_dir=self.cache_dir
+                logger.info(
+                    f"Loading model '{self.model_name}' via DA3 API..."
                 )
-            else:
-                self._model = DepthAnything3.from_pretrained(self.model_name)
+                if self.cache_dir:
+                    self._model = DepthAnything3.from_pretrained(
+                        self.model_name, cache_dir=self.cache_dir
+                    )
+                else:
+                    self._model = DepthAnything3.from_pretrained(self.model_name)
+                self._model = self._model.to(device=self.device)
+                self._model.eval()
+                return
+            except ImportError:
+                logger.info(
+                    "DA3 API not available (missing optional deps), "
+                    "using direct model loading..."
+                )
 
-            # Move model to device
+            # Fallback: Load model directly using registry (avoids api.py)
+            # This avoids pycolmap/moviepy/open3d dependencies in api.py
+            from huggingface_hub import hf_hub_download
+            from safetensors.torch import load_file
+            import json
+            from depth_anything_3.cfg import create_object, load_config
+            from depth_anything_3.registry import MODEL_REGISTRY
+
+            logger.info(
+                f"Loading model '{self.model_name}' directly from HuggingFace..."
+            )
+
+            # Download config to get model_name for registry
+            config_path = hf_hub_download(
+                repo_id=self.model_name,
+                filename="config.json",
+                cache_dir=self.cache_dir,
+            )
+
+            # Load HF config to get registry model name
+            with open(config_path) as f:
+                hf_config = json.load(f)
+
+            # Map HuggingFace model to registry name (e.g., "da3-base")
+            registry_name = hf_config.get("model_name", "da3-base")
+            if registry_name not in MODEL_REGISTRY:
+                # Fallback mapping for common names
+                name_map = {
+                    "DA3-BASE": "da3-base",
+                    "DA3-SMALL": "da3-small",
+                    "DA3-LARGE": "da3-large",
+                    "DA3-GIANT": "da3-giant",
+                }
+                registry_name = name_map.get(
+                    registry_name.upper(), registry_name.lower()
+                )
+
+            # Create model from registry config
+            config = load_config(MODEL_REGISTRY[registry_name])
+            self._model = create_object(config)
+
+            # Download and load weights
+            weights_path = hf_hub_download(
+                repo_id=self.model_name,
+                filename="model.safetensors",
+                cache_dir=self.cache_dir,
+            )
+            state_dict = load_file(weights_path)
+            self._model.load_state_dict(state_dict, strict=False)
+
+            # Move to device and set eval mode
             self._model = self._model.to(device=self.device)
-            self._model.eval()  # Set to evaluation mode
+            self._model.eval()
+
+            logger.info(f"Model loaded directly: {self.model_name}")
 
         except ImportError as e:
             raise RuntimeError(

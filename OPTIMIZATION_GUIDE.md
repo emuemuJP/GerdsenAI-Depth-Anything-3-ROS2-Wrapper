@@ -2,18 +2,71 @@
 
 This guide explains how to achieve >30 FPS performance with 1080p depth and confidence outputs on NVIDIA Jetson Orin AGX 64GB.
 
-## Performance Targets
+---
+
+## TensorRT Status (2026-01-31)
+
+**TensorRT acceleration validated on Jetson Orin NX 16GB.**
+
+| Component | Previous (L4T r36.2.0) | Current (L4T r36.4.0) |
+|-----------|------------------------|----------------------|
+| TensorRT | 8.6.2 (incompatible) | **10.3** (validated) |
+| CUDA | 12.2 | 12.6 |
+| cuDNN | 8.9 | 9.3 |
+
+**Root Cause (Resolved)**: TensorRT 8.6 could not compile DINOv2's Einsum operations. TensorRT 10.3 has enhanced ViT/MHA support.
+
+**Validated Performance (2026-01-31)**:
+- Platform: Jetson Orin NX 16GB
+- Model: DA3-SMALL at 518x518 FP16
+- Throughput: 35.3 FPS
+- GPU Latency: 26.4ms median (25.5ms min)
+- Engine Size: 58MB
+- Speedup: 6.8x over PyTorch baseline
+
+**To enable TensorRT:**
+```bash
+# Rebuild Docker image with new base
+docker compose build depth-anything-3-jetson
+
+# Run with auto TensorRT engine build
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
+
+---
+
+## Validated Performance on Jetson Orin NX 16GB
+
+### PyTorch Baseline
+
+Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0, CUDA 12.2):
+
+| Model | Backend | Resolution | FPS | Inference Time |
+|-------|---------|------------|-----|----------------|
+| DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
+
+### TensorRT 10.3 (Validated 2026-01-31)
+
+Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3):
+
+| Model | Backend | Resolution | FPS | GPU Latency | Engine Size | Speedup |
+|-------|---------|------------|-----|-------------|-------------|---------|
+| DA3-SMALL | TensorRT FP16 | 518x518 | 35.3 | 26.4ms median (25.5ms min) | 58MB | 6.8x |
+
+---
+
+## Performance Targets (Future - TensorRT)
 
 - **Input**: 1080p camera (1920x1080) at 30 FPS
 - **Output**: 1080p depth + confidence maps
 - **Target FPS**: >30 FPS sustained
 - **Platform**: NVIDIA Jetson Orin AGX 64GB
 
-## Quick Start (Fastest Path to >30 FPS)
+## Quick Start
 
-### Option 1: PyTorch FP16 (No TensorRT) - ~25-28 FPS
+### Option 1: PyTorch FP32 (Baseline) - ~5 FPS
 
-Easiest setup, no model conversion required:
+Works out of the box, no TensorRT engine build required:
 
 ```bash
 # Configure your webcam for 1080p MJPEG
@@ -31,41 +84,58 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   model_input_width:=384
 ```
 
-### Option 2: TensorRT INT8 (Recommended) - >30 FPS
+### Option 2: TensorRT FP16 (Recommended) - >30 FPS Target
 
-Requires one-time model conversion, achieves >30 FPS:
+Requires Docker image rebuild and one-time model conversion:
 
 ```bash
-# Step 1: Convert model to TensorRT INT8 (one-time, takes 5-10 minutes)
-python3 scripts/convert_to_tensorrt.py \
-  --model depth-anything/DA3-SMALL \
-  --output models/da3_small_int8.pth \
-  --precision int8 \
-  --input-size 384 384 \
-  --benchmark
+# Step 1: Build TensorRT engine with auto-detection (recommended)
+# This auto-detects your Jetson platform and uses optimal settings
+python3 scripts/build_tensorrt_engine.py --auto
+
+# Or specify model and precision manually:
+python3 scripts/build_tensorrt_engine.py \
+  --model da3-small \
+  --precision fp16 \
+  --resolution 308
 
 # Step 2: Launch with TensorRT backend
 ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   image_topic:=/camera/image_raw \
-  model_name:=depth-anything/DA3-SMALL \
-  backend:=tensorrt_int8 \
-  trt_model_path:=models/da3_small_int8.pth \
-  model_input_height:=384 \
-  model_input_width:=384
+  backend:=tensorrt_native \
+  trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_308x308_*.engine
+```
+
+### Option 3: Docker Deployment (Recommended)
+
+Build with L4T r36.4.0 base and run with automatic TensorRT engine building:
+
+```bash
+# Build the Jetson image
+docker compose build depth-anything-3-jetson
+
+# Run with auto TensorRT engine building on first start
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+
+# Or build engine at image build time (slower build, faster first run)
+docker compose build depth-anything-3-jetson \
+  --build-arg BUILD_TENSORRT=true \
+  --build-arg TENSORRT_MODEL=da3-small
 ```
 
 ## Implementation Details
 
 ### Key Optimizations Implemented
 
-1. **Model Input Resolution: 384x384**
-   - Reduces inference time from ~50ms (518x518) to ~18ms (384x384) with TensorRT INT8
-   - Minimal quality loss when upsampled to 1080p output
+1. **Model Input Resolution: Platform-Aware**
+   - Orin Nano/NX 8GB: 308x308 (optimal for memory constraints)
+   - Orin NX 16GB / AGX Orin: 518x518 (higher quality)
+   - Reduces inference time significantly vs larger resolutions
 
-2. **TensorRT INT8 Quantization**
-   - 3-4x faster inference vs PyTorch
-   - ~5-8% accuracy trade-off (acceptable for most applications)
-   - Alternative: TensorRT FP16 (2-3x speedup, better accuracy)
+2. **TensorRT FP16 Quantization (Recommended)**
+   - 2-3x faster inference vs PyTorch
+   - Excellent accuracy (no calibration required)
+   - Alternative: TensorRT INT8 (3-4x speedup, requires calibration dataset)
 
 3. **GPU-Accelerated Upsampling**
    - Upsamples 384x384 depth → 1080p on GPU
@@ -89,15 +159,15 @@ ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
 
 ### Performance Breakdown (Expected on Jetson Orin AGX)
 
-**TensorRT INT8 Pipeline (>30 FPS):**
+**TensorRT FP16 Pipeline (>30 FPS):**
 ```
 1080p camera capture          ~5ms
-GPU resize (1080p→384x384)    ~3ms
-TensorRT INT8 inference       ~18ms
-GPU upsample (384→1080p)      ~4ms
+GPU resize (1080p→518x518)    ~3ms
+TensorRT FP16 inference       ~20ms
+GPU upsample (518→1080p)      ~4ms
 Publishing depth+confidence   ~2ms
 ────────────────────────────────────
-Total:                        ~32ms = 31.25 FPS
+Total:                        ~34ms = 29.4 FPS
 ```
 
 **With optimizations:**
@@ -131,39 +201,44 @@ python3 -c "import torch; print('CUDA:', torch.cuda.is_available())"
 python3 -c "import torch2trt; print('torch2trt available')"
 ```
 
-### 2. Convert Model to TensorRT
+### 2. Build TensorRT Engine
 
 ```bash
 # Create models directory
-mkdir -p models
+mkdir -p models/tensorrt models/onnx
 
-# Convert DA3-SMALL to INT8 (fastest)
-python3 scripts/convert_to_tensorrt.py \
-  --model depth-anything/DA3-SMALL \
-  --output models/da3_small_int8.pth \
-  --precision int8 \
-  --input-size 384 384 \
-  --benchmark
+# Auto-detect platform and build optimal engine (recommended)
+python3 scripts/build_tensorrt_engine.py --auto
 
-# Optional: Convert to FP16 (better quality, slightly slower)
-python3 scripts/convert_to_tensorrt.py \
-  --model depth-anything/DA3-SMALL \
-  --output models/da3_small_fp16.pth \
+# Or build with specific settings:
+# For Orin Nano/NX 8GB (use 308x308)
+python3 scripts/build_tensorrt_engine.py \
+  --model da3-small \
   --precision fp16 \
-  --input-size 384 384 \
-  --benchmark
+  --resolution 308
+
+# For AGX Orin (use 518x518)
+python3 scripts/build_tensorrt_engine.py \
+  --model da3-small \
+  --precision fp16 \
+  --resolution 518
+
+# List available models
+python3 scripts/build_tensorrt_engine.py --list-models
 ```
 
-Expected benchmark output:
+Expected output:
 ```
-ORIGINAL MODEL BENCHMARK
-Mean: 95.23 ms (10.5 FPS)
+Detected Platform: Jetson AGX Orin
 
-TENSORRT MODEL BENCHMARK
-Mean: 24.67 ms (40.5 FPS)
+Recommended settings for AGX_ORIN_64GB:
+  Precision: fp16
+  Resolution: 518x518
+  Workspace: 8192 MB
 
-COMPARISON
-Speedup: 3.86x
+Downloading ONNX model: Depth Anything 3 Small
+Building TensorRT engine...
+Engine built successfully: models/tensorrt/da3-small_fp16_518x518_AGX_ORIN_64GB.engine
 ```
 
 ### 3. Configure Your Camera
@@ -186,13 +261,11 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 ### 4. Launch Optimized Node
 
 ```bash
-# TensorRT INT8 (>30 FPS)
+# TensorRT FP16 (>30 FPS)
 ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
   image_topic:=/camera/image_raw \
-  backend:=tensorrt_int8 \
-  trt_model_path:=models/da3_small_int8.pth \
-  model_input_height:=384 \
-  model_input_width:=384 \
+  backend:=tensorrt_native \
+  trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_518x518_AGX_ORIN_64GB.engine \
   output_height:=1080 \
   output_width:=1920 \
   log_inference_time:=true
@@ -214,24 +287,25 @@ Watch the console output for performance metrics (logged every 5 seconds):
 | Backend | Speed | Quality | Setup |
 |---------|-------|---------|-------|
 | `pytorch` | Baseline | Best | No conversion needed |
-| `tensorrt_fp16` | 2-3x faster | Excellent | One-time conversion |
-| `tensorrt_int8` | 3-4x faster | Very Good | One-time conversion |
+| `tensorrt_native` (FP16) | 2-3x faster | Excellent | One-time engine build |
+| `tensorrt_native` (INT8) | 3-4x faster | Very Good | Requires calibration dataset |
 
 ### Model Selection
 
-| Model | Speed | Quality | FPS (TRT INT8) |
-|-------|-------|---------|----------------|
-| DA3-SMALL | Fastest | Good | 35-40 FPS |
-| DA3-BASE | Medium | Better | 28-32 FPS |
-| DA3-LARGE | Slow | Best | 18-22 FPS |
+| Model | Speed | Quality | FPS (TRT FP16 @ 518) |
+|-------|-------|---------|----------------------|
+| DA3-SMALL | Fastest | Good | 30-35 FPS |
+| DA3-BASE | Medium | Better | 25-30 FPS |
+| DA3-LARGE | Slow | Best | 15-20 FPS |
 
 ### Input Resolution Trade-offs
 
-| Resolution | Inference Time (TRT INT8) | Quality | Recommendation |
-|------------|---------------------------|---------|----------------|
-| 384x384 | ~18ms | Very Good | **Recommended for >30 FPS** |
-| 518x518 | ~30ms | Excellent | Use if quality is critical |
-| 640x640 | ~45ms | Best | Too slow for real-time |
+| Resolution | Platform | Inference Time (TRT FP16) | Recommendation |
+|------------|----------|---------------------------|----------------|
+| 308x308 | Orin Nano 4GB/8GB | ~15ms | **Recommended for memory-constrained** |
+| 308x308 | Orin NX 8GB | ~12ms | Good balance |
+| 518x518 | Orin NX 16GB | ~25ms | **Recommended for 16GB+** |
+| 518x518 | AGX Orin 32GB/64GB | ~20ms | **Recommended for AGX** |
 
 ### Upsampling Mode
 
@@ -273,18 +347,21 @@ watch -n 1 nvidia-smi
 # If low, check for CPU bottlenecks
 ```
 
-### Issue: TensorRT conversion fails
+### Issue: TensorRT engine build fails
 
 ```bash
-# Check torch2trt installation
-pip3 show torch2trt
+# Check TensorRT and pycuda installation
+python3 -c "import tensorrt; print(f'TensorRT {tensorrt.__version__}')"
+python3 -c "import pycuda.driver; print('pycuda OK')"
 
-# Reinstall if needed
-pip3 uninstall torch2trt
-pip3 install torch2trt
+# Verify trtexec is available
+which trtexec || ls /usr/src/tensorrt/bin/trtexec
 
 # Verify TensorRT libraries
 ls /usr/lib/aarch64-linux-gnu/libnvinfer*
+
+# Try building with verbose output
+python3 scripts/build_tensorrt_engine.py --auto --verbose
 ```
 
 ### Issue: Out of memory
@@ -329,41 +406,78 @@ Expected: 40-45 FPS (720p output)
 
 ## Benchmark Results
 
-Tested on Jetson Orin AGX 64GB with Anker PowerConf C200:
+### Measured Results (PyTorch - Current)
 
-| Configuration | Model Input | Backend | FPS | Total Time | Quality |
-|--------------|-------------|---------|-----|------------|---------|
-| Baseline | 518x518 | PyTorch | 6 FPS | 167ms | Excellent |
-| Optimized FP16 | 384x384 | PyTorch FP16 | 26 FPS | 38ms | Very Good |
-| **Recommended** | 384x384 | TensorRT INT8 | **34 FPS** | **29ms** | Very Good |
-| Maximum Quality | 518x518 | TensorRT FP16 | 22 FPS | 45ms | Excellent |
+Tested on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 
-All configurations produce 1080p depth + confidence outputs.
+| Configuration | Model Input | Backend | FPS | Inference Time | Notes |
+|--------------|-------------|---------|-----|----------------|-------|
+| **Current Baseline** | 518x518 | PyTorch FP32 | ~5.2 | ~193ms | Functional |
+
+### Validated Results (TensorRT 10.3)
+
+Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3, 2026-01-31):
+
+| Configuration | Model Input | Backend | FPS | GPU Latency | Quality |
+|--------------|-------------|---------|-----|-------------|---------|
+| Baseline | 518x518 | PyTorch FP32 | 5.2 | ~193ms | Excellent |
+| TensorRT FP16 | 518x518 | TensorRT FP16 | 35.3 | 26.4ms median | Excellent |
+
+**Key Technical Details:**
+- Dockerfile base: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
+- TRT 10.x syntax: `--memPoolSize=workspace:2048MiB` (not deprecated `--workspace`)
+- ONNX input shape: 5D `pixel_values:1x1x3x518x518`
+- Engine size: 58MB
+
+### Platform-Specific Performance Projections
+
+Based on validated Orin NX 16GB results, projected performance for other platforms:
+
+| Platform | Model | Resolution | Precision | Projected FPS |
+|----------|-------|------------|-----------|---------------|
+| Orin Nano 4GB | da3-small | 308 | FP16 | ~40-45 |
+| Orin Nano 8GB | da3-small | 308 | FP16 | ~45-50 |
+| Orin NX 8GB | da3-small | 308 | FP16 | ~50-55 |
+| **Orin NX 16GB** | **da3-small** | **518** | **FP16** | **35.3 (validated)** |
+| AGX Orin 32GB | da3-small | 518 | FP16 | ~45-55 |
+| AGX Orin 64GB | da3-small | 518 | FP16 | ~50-60 |
+
+**Note**: Projections based on proportional compute capacity. Only Orin NX 16GB has validated measurements.
 
 ## Quality Comparison
 
-**INT8 vs FP16 Quantization:**
-- Absolute depth error: +3-5% (INT8 vs FP16)
-- Edge sharpness: Minimal difference
-- Overall quality: Excellent for most applications
-- Recommendation: Use INT8 unless absolute maximum accuracy required
+**FP16 vs INT8 Quantization:**
+- FP16: No accuracy loss, recommended default
+- INT8: ~3-5% accuracy reduction, requires calibration dataset
+- Recommendation: Use FP16 unless maximum speed is critical and you have calibration data
 
-**384x384 vs 518x518 Input:**
-- When upsampled to 1080p, visual difference is minimal
-- 518x518 slightly better for fine details
-- 384x384 recommended for real-time applications
+**308x308 vs 518x518 Input:**
+- When upsampled to 1080p, both produce good results
+- 518x518 better for fine details and edges
+- 308x308 recommended for memory-constrained devices (Orin Nano)
 
 ## Summary
 
-To achieve >30 FPS with 1080p depth + confidence on Jetson Orin AGX:
+To achieve >30 FPS with 1080p depth + confidence on Jetson:
 
-1. Use DA3-SMALL model
-2. Convert to TensorRT INT8
-3. Use 384x384 model input
-4. Enable GPU upsampling to 1080p
-5. Enable async colorization
-6. Configure camera for 1080p MJPEG
+**Quick Start (Docker):**
+```bash
+# Build Jetson image
+docker compose build depth-anything-3-jetson
 
-Expected performance: **32-36 FPS** with excellent depth quality.
+# Run with auto TensorRT engine building
+DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
+```
+
+**Manual Setup:**
+1. Run `python3 scripts/build_tensorrt_engine.py --auto` (auto-detects platform)
+2. Launch with `backend:=tensorrt_native`
+3. Configure camera for 1080p MJPEG
+
+**Platform-specific settings are automatically selected:**
+- Orin Nano/NX 8GB: 308x308 FP16
+- Orin NX 16GB / AGX Orin: 518x518 FP16
+
+Expected performance: **30-50 FPS** depending on platform.
 
 For questions or issues, please open a GitHub issue.
