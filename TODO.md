@@ -2,14 +2,14 @@
 
 ## Executive Summary
 
-| Metric | PyTorch Baseline | TensorRT 10.3 FP16 |
-|--------|------------------|-------------------|
-| FPS | 5.2 | **35.3** |
-| Latency | 193ms | **26.4ms** |
-| Speedup | 1x | **6.8x** |
-| Engine | N/A | 58MB |
+| Metric | PyTorch Baseline | TensorRT 10.3 FP16 (518x518) | TensorRT 10.3 FP16 (308x308) |
+|--------|------------------|------------------------------|------------------------------|
+| FPS | 5.2 | **40.1** | **92.6** |
+| Latency | 193ms | **25.0ms** | **10.9ms** |
+| Speedup | 1x | **7.7x** | **17.8x** |
+| Engine | N/A | 64MB | 60MB |
 
-**Platform:** Jetson Orin NX 16GB, JetPack 6.2.1, TensorRT 10.3.0.30
+**Platform:** Jetson Orin NX 16GB, JetPack 6.2, TensorRT 10.3
 
 ---
 
@@ -66,13 +66,28 @@ bash scripts/deploy_jetson.sh --host-trt
 
 ---
 
-## Phase 3: Resolution Tuning [PENDING]
+## Phase 3: Performance Benchmarking [COMPLETE]
 
-| Resolution | Expected FPS |
-|------------|--------------|
-| 518x518 | 35 (validated) |
-| 400x400 | ~45 |
-| 308x308 | ~55 |
+### Resolution Benchmarks (DA3-Small)
+
+| Resolution | Throughput | Latency | Speedup |
+|------------|------------|---------|---------|
+| 518x518 | 40.1 FPS | 25.0ms | 1.0x |
+| 400x400 | 63.6 FPS | 15.8ms | 1.6x |
+| 308x308 | 92.6 FPS | 10.9ms | 2.3x |
+| 256x256 | 110.2 FPS | 9.1ms | 2.7x |
+
+### Model Size Benchmarks (518x518)
+
+| Model | Parameters | Throughput | Latency | Engine Size |
+|-------|------------|------------|---------|-------------|
+| DA3-Small | ~24M | 40.0 FPS | 25.0ms | 64MB |
+| DA3-Base | ~97M | 19.2 FPS | 51.4ms | 211MB |
+| DA3-Large | ~335M | 7.5 FPS | 132.2ms | 674MB |
+
+**Recommendation:** DA3-Small @ 308-400px for real-time robotics (64-93 FPS)
+
+See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ---
 
