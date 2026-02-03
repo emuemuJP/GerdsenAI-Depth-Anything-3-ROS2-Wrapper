@@ -16,7 +16,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
 from cv_bridge import CvBridge, CvBridgeError
 
-from .da3_inference import DA3InferenceWrapper
+from .da3_inference import DA3InferenceWrapper, SharedMemoryInference
 from .utils import normalize_depth, colorize_depth, PerformanceMetrics
 
 
@@ -44,17 +44,29 @@ class DepthAnything3Node(Node):
         # Initialize performance metrics
         self.metrics = PerformanceMetrics(window_size=30)
 
-        # Initialize DA3 model
-        self.get_logger().info(
-            f"Initializing Depth Anything 3 with model: {self.model_name}"
-        )
+        # Initialize inference backend
         try:
-            self.model = DA3InferenceWrapper(
-                model_name=self.model_name, device=self.device, cache_dir=self.cache_dir
-            )
-            self.get_logger().info("Model loaded successfully")
+            if self.use_shared_memory:
+                self.get_logger().info(
+                    "Initializing SharedMemoryInference for host TRT communication"
+                )
+                self.model = SharedMemoryInference(timeout=1.0)
+                if self.model.is_service_available:
+                    self.get_logger().info("Host TRT service detected and ready")
+                else:
+                    self.get_logger().warn(
+                        "Host TRT service not detected - will retry on first inference"
+                    )
+            else:
+                self.get_logger().info(
+                    f"Initializing Depth Anything 3 with model: {self.model_name}"
+                )
+                self.model = DA3InferenceWrapper(
+                    model_name=self.model_name, device=self.device, cache_dir=self.cache_dir
+                )
+            self.get_logger().info("Inference backend initialized successfully")
         except Exception as e:
-            self.get_logger().error(f"Failed to load model: {e}")
+            self.get_logger().error(f"Failed to initialize inference backend: {e}")
             raise
 
         # Setup QoS profile for subscriptions
@@ -122,6 +134,9 @@ class DepthAnything3Node(Node):
         # Logging
         self.declare_parameter("log_inference_time", False)
 
+        # Jetson TRT mode (host-container split)
+        self.declare_parameter("use_shared_memory", False)
+
     def _load_parameters(self) -> None:
         """Load parameters from ROS2 parameter server."""
         # Model configuration
@@ -147,6 +162,9 @@ class DepthAnything3Node(Node):
 
         # Logging
         self.log_inference_time = self.get_parameter("log_inference_time").value
+
+        # Jetson TRT mode
+        self.use_shared_memory = self.get_parameter("use_shared_memory").value
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
         """

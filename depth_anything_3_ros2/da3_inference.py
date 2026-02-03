@@ -223,6 +223,19 @@ class SharedMemoryInference:
         """Check if host TRT service is currently available."""
         return self._check_service()
 
+    def get_gpu_memory_usage(self) -> Optional[Dict[str, float]]:
+        """
+        Get GPU memory usage (not available for shared memory inference).
+
+        Returns:
+            None - GPU memory is managed by host TRT service
+        """
+        return None
+
+    def clear_cache(self) -> None:
+        """Clear cache (no-op for shared memory inference)."""
+        pass
+
 
 class DA3InferenceWrapper:
     """
