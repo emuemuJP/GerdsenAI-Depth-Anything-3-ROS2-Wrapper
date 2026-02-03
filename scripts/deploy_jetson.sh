@@ -105,35 +105,50 @@ mkdir -p "$ONNX_DIR" "$TRT_DIR"
 if [ ! -f "$ONNX_MODEL" ]; then
     echo "       Downloading from HuggingFace..."
 
-    # Auto-install huggingface_hub if not available
-    if ! command -v huggingface-cli &> /dev/null; then
+    # Auto-install dependencies if not available
+    python3 -c "import huggingface_hub" 2>/dev/null || {
         echo "       Installing huggingface_hub..."
         pip3 install huggingface_hub 2>&1 | tail -1
-    fi
+    }
 
-    # Auto-install onnx if not available
-    if ! python3 -c "import onnx" 2>/dev/null; then
+    python3 -c "import onnx" 2>/dev/null || {
         echo "       Installing onnx..."
         pip3 install onnx 2>&1 | tail -1
-    fi
+    }
 
-    # Download model
-    if command -v huggingface-cli &> /dev/null; then
-        huggingface-cli download onnx-community/depth-anything-v3-small \
-            --local-dir "$ONNX_DIR/hf-download" \
-            --include "*.onnx" "*.onnx_data"
+    # Download and embed model using Python API (more reliable than CLI)
+    python3 << 'PYEOF'
+import os
+import sys
 
-        # Embed external weights into single file
-        echo "       Embedding weights into single ONNX file..."
-        python3 -c "
-import onnx
-model = onnx.load('$ONNX_DIR/hf-download/onnx/model.onnx')
-onnx.save(model, '$ONNX_MODEL', save_as_external_data=False)
-print('       Created: $ONNX_MODEL')
-"
-    else
-        echo -e "${RED}ERROR: Failed to install huggingface_hub${NC}"
-        echo "       Try manually: pip3 install huggingface_hub"
+try:
+    from huggingface_hub import snapshot_download
+    import onnx
+
+    onnx_dir = "models/onnx"
+    hf_download_dir = os.path.join(onnx_dir, "hf-download")
+    output_model = os.path.join(onnx_dir, "da3-small-embedded.onnx")
+
+    print("       Downloading ONNX model...")
+    snapshot_download(
+        repo_id="onnx-community/depth-anything-v3-small",
+        local_dir=hf_download_dir,
+        allow_patterns=["*.onnx", "*.onnx_data"]
+    )
+
+    print("       Embedding weights into single ONNX file...")
+    model_path = os.path.join(hf_download_dir, "onnx", "model.onnx")
+    model = onnx.load(model_path)
+    onnx.save(model, output_model, save_as_external_data=False)
+    print(f"       Created: {output_model}")
+
+except Exception as e:
+    print(f"ERROR: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}ERROR: Failed to download ONNX model${NC}"
         exit 1
     fi
 fi
