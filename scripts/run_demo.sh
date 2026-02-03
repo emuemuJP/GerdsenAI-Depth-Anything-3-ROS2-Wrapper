@@ -53,6 +53,10 @@ if [ -z "$DISPLAY" ]; then
     echo -e "${YELLOW}Setting DISPLAY=:0${NC}"
 fi
 
+# Allow Docker to access X11 display
+echo -e "${GREEN}Enabling X11 access for Docker...${NC}"
+xhost +local:docker 2>/dev/null || xhost + 2>/dev/null || true
+
 # Cleanup function
 cleanup() {
     echo ""
@@ -118,17 +122,54 @@ echo -e "${GREEN}   Depth node started${NC}"
 # 4. Launch viewer
 echo -e "${GREEN}[4/4] Launching depth viewer...${NC}"
 echo ""
-echo "=============================================="
-echo "  Controls:"
-echo "    Q - Quit"
-echo "    S - Save frame"
-echo "    F - Toggle FPS"
-echo "=============================================="
-echo ""
 
-# Run viewer in container with X11 forwarding
-docker exec -e DISPLAY=$DISPLAY da3_ros2_jetson bash -c "
-    source /opt/ros/humble/install/setup.bash
-    source /ros2_ws/install/setup.bash
-    python3 /ros2_ws/src/depth_anything_3_ros2/scripts/demo_depth_viewer.py
-"
+# Check if running with display access (not via SSH)
+if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]; then
+    echo -e "${YELLOW}=============================================="
+    echo "  Running via SSH - limited display access"
+    echo "=============================================="
+    echo ""
+    echo "The depth pipeline is now running!"
+    echo "To view the output, run ONE of these on the Jetson directly:"
+    echo ""
+    echo "  Option 1 - rqt_image_view (if ROS2 on host):"
+    echo "    rqt_image_view /depth_anything_3/depth_colored"
+    echo ""
+    echo "  Option 2 - Docker with display:"
+    echo "    xhost +local:docker"
+    echo "    docker exec -e DISPLAY=:0 da3_ros2_jetson rqt_image_view /depth_anything_3/depth_colored"
+    echo ""
+    echo "Press Ctrl+C to stop the demo.${NC}"
+    echo ""
+
+    # Keep running until Ctrl+C
+    while true; do
+        sleep 5
+        # Show stats
+        if [ -f "/tmp/da3_shared/stats" ]; then
+            STATS=$(cat /tmp/da3_shared/stats)
+            FPS=$(echo $STATS | cut -d',' -f1)
+            LATENCY=$(echo $STATS | cut -d',' -f2)
+            FRAMES=$(echo $STATS | cut -d',' -f3)
+            echo -e "TRT Stats: ${GREEN}${FPS} FPS${NC}, ${LATENCY}ms latency, ${FRAMES} frames"
+        fi
+    done
+else
+    echo "=============================================="
+    echo "  Controls:"
+    echo "    Q - Quit"
+    echo "    S - Save frame"
+    echo "    F - Toggle FPS"
+    echo "=============================================="
+    echo ""
+
+    # Allow Docker to access X11 display
+    xhost +local:docker 2>/dev/null || xhost + 2>/dev/null || true
+
+    # Run viewer in container with X11 forwarding
+    docker exec -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 da3_ros2_jetson bash -c "
+        source /opt/ros/humble/install/setup.bash
+        source /ros2_ws/install/setup.bash
+        python3 /ros2_ws/src/depth_anything_3_ros2/scripts/demo_depth_viewer.py
+    "
+fi

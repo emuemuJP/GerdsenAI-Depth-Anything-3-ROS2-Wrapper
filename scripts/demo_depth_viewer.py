@@ -172,73 +172,35 @@ class DepthViewer:
         cv2.destroyAllWindows()
 
 
-def start_trt_service():
-    """Start the TRT inference service if not running."""
-    # Check if already running
-    result = subprocess.run(
-        ["pgrep", "-f", "trt_inference_service"],
-        capture_output=True
-    )
-    if result.returncode == 0:
-        print("[OK] TRT inference service already running")
-        return None
-
-    print("[...] Starting TRT inference service...")
-
-    # Find script directory
-    script_dir = Path(__file__).parent.parent
-    engine_path = script_dir / "models" / "tensorrt" / "da3-small-fp16.engine"
-    service_script = script_dir / "scripts" / "trt_inference_service.py"
-
-    if not engine_path.exists():
-        print(f"[ERROR] TensorRT engine not found: {engine_path}")
-        print("Run: bash scripts/deploy_jetson.sh --host-trt")
-        sys.exit(1)
-
-    # Clear shared directory
+def check_trt_service():
+    """Check if the TRT inference service is running (started by run_demo.sh on host)."""
     shared_dir = Path("/tmp/da3_shared")
-    shared_dir.mkdir(exist_ok=True)
-    for f in shared_dir.glob("*"):
-        f.unlink()
-
-    # Start service
-    proc = subprocess.Popen(
-        ["python3", str(service_script),
-         "--engine", str(engine_path),
-         "--poll-interval", "0.001"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-
-    # Wait for service to be ready
     status_file = shared_dir / "status"
-    for _ in range(50):  # 5 second timeout
-        time.sleep(0.1)
-        if status_file.exists():
-            status = status_file.read_text().strip()
-            if status.startswith("ready") or status.startswith("complete"):
-                print("[OK] TRT inference service started")
-                return proc
 
-    print("[WARN] TRT service may not be ready")
-    return proc
+    # Check if service is available via status file
+    if status_file.exists():
+        status = status_file.read_text().strip()
+        if status.startswith("ready") or status.startswith("complete"):
+            print("[OK] TRT inference service is running")
+            return True
+
+    print("[WARN] TRT inference service not detected")
+    print("       Make sure to run: bash scripts/run_demo.sh")
+    print("       Or start manually: python3 scripts/trt_inference_service.py --engine <path>")
+    return False
 
 
 def main():
     """Main entry point."""
-    trt_proc = None
-
     def signal_handler(signum, frame):
         print("\nShutting down...")
-        if trt_proc:
-            trt_proc.terminate()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Start TRT service
-    trt_proc = start_trt_service()
+    # Check TRT service (should be started by run_demo.sh on host)
+    check_trt_service()
 
     if not ROS2_AVAILABLE:
         print("\n[ERROR] ROS2 is required for this demo.")
@@ -282,8 +244,6 @@ def main():
     finally:
         node.destroy_node()
         rclpy.shutdown()
-        if trt_proc:
-            trt_proc.terminate()
 
 
 if __name__ == "__main__":
