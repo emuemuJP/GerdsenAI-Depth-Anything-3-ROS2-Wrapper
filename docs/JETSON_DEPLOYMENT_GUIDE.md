@@ -5,10 +5,11 @@
 | Component | Version | Notes |
 |-----------|---------|-------|
 | Platform | Jetson Orin NX 16GB | Seeed reComputer |
-| JetPack | 6.2.1 (L4T R36.4.7) | Required for TRT 10.3 |
+| JetPack | 6.2 (L4T R36.4) | Required for TRT 10.3 |
 | TensorRT | 10.3.0.30 | Host-side inference |
-| CUDA | 12.6.11 | Host |
-| Performance | 35.3 FPS @ 518x518 FP16 | 6.8x speedup over PyTorch |
+| CUDA | 12.6 | Host |
+| Performance | **40 FPS @ 518x518 FP16** | 7.7x speedup over PyTorch |
+| Performance | **93 FPS @ 308x308 FP16** | 17.8x speedup over PyTorch |
 
 ---
 
@@ -17,35 +18,35 @@
 Due to broken TensorRT Python bindings in available Jetson containers ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                          HOST (JetPack 6.2+)                    │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │           TRT Inference Service (Python)                │    │
-│  │  - Loads engine with host TensorRT 10.3                 │    │
-│  │  - Watches /tmp/da3_shared/input.npy                    │    │
-│  │  - Writes /tmp/da3_shared/output.npy                    │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                              ▲                                   │
-│                              │ shared memory                     │
-│                              ▼                                   │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │              Docker Container (L4T r36.2.0)             │    │
-│  │  ┌─────────────────────────────────────────────────┐    │    │
-│  │  │              ROS2 Depth Node                    │    │    │
-│  │  │  - Subscribes to /image_raw                     │    │    │
-│  │  │  - Writes input to shared memory                │    │    │
-│  │  │  - Reads depth from shared memory               │    │    │
-│  │  │  - Publishes to /depth                          │    │    │
-│  │  └─────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------+
+|                      HOST (JetPack 6.2+)                       |
+|  +----------------------------------------------------------+  |
+|  |           TRT Inference Service (Python)                 |  |
+|  |  - Loads engine with host TensorRT 10.3                  |  |
+|  |  - Watches /tmp/da3_shared/input.npy                     |  |
+|  |  - Writes /tmp/da3_shared/output.npy                     |  |
+|  +----------------------------------------------------------+  |
+|                              ^                                  |
+|                              | shared memory                    |
+|                              v                                  |
+|  +----------------------------------------------------------+  |
+|  |              Docker Container (L4T r36.2.0)              |  |
+|  |  +----------------------------------------------------+  |  |
+|  |  |              ROS2 Depth Node                       |  |  |
+|  |  |  - Subscribes to /image_raw                        |  |  |
+|  |  |  - Writes input to shared memory                   |  |  |
+|  |  |  - Reads depth from shared memory                  |  |  |
+|  |  |  - Publishes to /depth                             |  |  |
+|  |  +----------------------------------------------------+  |  |
+|  +----------------------------------------------------------+  |
++---------------------------------------------------------------+
 ```
 
 **Why this approach:**
 - `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
 - `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
 - Container TRT 8.6.2 cannot build DA3 engines (DINOv2 incompatibility)
-- Host TRT 10.3 works perfectly (validated at 26.4ms latency)
+- Host TRT 10.3 works perfectly (validated at 25ms latency)
 
 ---
 
@@ -58,7 +59,7 @@ bash scripts/deploy_jetson.sh --host-trt
 
 This script:
 1. Verifies TensorRT 10.3 on host
-2. Downloads ONNX model if missing
+2. Downloads ONNX model if missing (auto-installs huggingface_hub)
 3. Builds TensorRT FP16 engine (~2 min)
 4. Starts host inference service
 5. Starts Docker container with shared memory mount
@@ -87,7 +88,7 @@ mkdir -p models/tensorrt
   --optShapes=pixel_values:1x1x3x518x518
 ```
 
-**Build time:** ~2 minutes | **Engine size:** ~58 MB
+**Build time:** ~2 minutes | **Engine size:** ~64 MB
 
 ### Step 3: Start Host Inference Service
 
@@ -116,21 +117,31 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py use_shared_memory:=
 
 ## Performance Results
 
-| Metric | Value |
-|--------|-------|
-| Throughput | 35.3 FPS |
-| Latency (median) | 26.4 ms |
-| Latency (p95) | 33.3 ms |
-| GPU Temp | 44-45C |
-| Speedup | 6.8x vs PyTorch |
+See [JETSON_BENCHMARKS.md](JETSON_BENCHMARKS.md) for comprehensive benchmarks.
 
-### Resolution Options
+### Quick Reference
 
-| Resolution | Expected FPS | Use Case |
-|------------|--------------|----------|
-| 518x518 | ~35 FPS | High quality |
-| 400x400 | ~45 FPS | Balanced |
-| 308x308 | ~55 FPS | High speed |
+| Configuration | FPS | Latency | Use Case |
+|--------------|-----|---------|----------|
+| DA3-Small @ 518x518 | 40 | 25ms | High quality |
+| DA3-Small @ 400x400 | 64 | 16ms | Balanced |
+| DA3-Small @ 308x308 | 93 | 11ms | Real-time robotics |
+| DA3-Small @ 256x256 | 110 | 9ms | High-speed |
+
+### Model Variants
+
+| Model | FPS (518x518) | Latency | Engine Size |
+|-------|---------------|---------|-------------|
+| DA3-Small | 40 | 25ms | 64MB |
+| DA3-Base | 19 | 51ms | 211MB |
+| DA3-Large | 7.5 | 132ms | 674MB |
+
+### Thermal Stability
+
+10-minute sustained load test **PASSED**:
+- Throughput: 40.79 FPS (stable)
+- Latency variance: < 5%
+- No thermal throttling detected
 
 ---
 
@@ -142,14 +153,8 @@ The host service and container communicate via memory-mapped files:
 |------|-----------|--------|
 | `/tmp/da3_shared/input.npy` | Container -> Host | float32 [1,1,3,518,518] |
 | `/tmp/da3_shared/output.npy` | Host -> Container | float32 [1,518,518] |
-| `/tmp/da3_shared/ready.flag` | Host -> Container | Empty file (signal) |
-| `/tmp/da3_shared/request.flag` | Container -> Host | Empty file (signal) |
-
-**Synchronization:**
-1. Container writes `input.npy`, creates `request.flag`
-2. Host detects `request.flag`, runs inference, writes `output.npy`, creates `ready.flag`
-3. Container detects `ready.flag`, reads `output.npy`
-4. Both delete flag files
+| `/tmp/da3_shared/request` | Container -> Host | Timestamp signal |
+| `/tmp/da3_shared/status` | Host -> Container | "ready", "complete:time", "error:msg" |
 
 ---
 
@@ -196,11 +201,14 @@ TensorRT 10.x changed CLI syntax:
 |------|---------|
 | `scripts/deploy_jetson.sh` | Automated deployment |
 | `scripts/trt_inference_service.py` | Host-side TRT inference |
+| `scripts/benchmark_resolutions.sh` | Resolution benchmark script |
+| `scripts/benchmark_models.sh` | Model size benchmark script |
+| `scripts/thermal_stability_test.sh` | Thermal validation script |
 | `depth_anything_3_ros2/da3_inference.py` | Inference wrapper (shared memory support) |
-| `models/tensorrt/da3-small-fp16.engine` | TRT engine (58 MB) |
+| `models/tensorrt/da3-small-fp16.engine` | TRT engine (64 MB) |
 | `docker-compose.yml` | Container config |
 
 ---
 
-**Last Updated:** 2026-01-31  
-**Validated On:** Jetson Orin NX 16GB, JetPack 6.2.1, TensorRT 10.3.0.30
+**Last Updated:** 2026-02-02
+**Validated On:** Jetson Orin NX 16GB, JetPack 6.2, TensorRT 10.3.0.30

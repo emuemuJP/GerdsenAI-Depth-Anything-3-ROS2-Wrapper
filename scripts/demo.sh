@@ -285,23 +285,58 @@ if [ "$USE_TRT" = true ]; then
     # Check for ONNX model
     if [ ! -f "$ONNX_MODEL" ]; then
         echo "       Downloading ONNX model from HuggingFace..."
-        if command -v huggingface-cli &> /dev/null; then
-            huggingface-cli download onnx-community/depth-anything-v3-small \
-                --local-dir "$ONNX_DIR/hf-download" \
-                --include "*.onnx" "*.onnx_data" 2>/dev/null
 
-            # Embed weights
-            python3 -c "
-import onnx
-model = onnx.load('$ONNX_DIR/hf-download/onnx/model.onnx')
-onnx.save(model, '$ONNX_MODEL', save_as_external_data=False)
-print('       ONNX model ready')
-"
-        else
-            echo -e "${RED}ERROR: huggingface-cli not found${NC}"
-            echo "       Install with: pip install huggingface_hub"
-            echo "       Or use --no-trt to skip TensorRT"
-            exit 1
+        # Auto-install huggingface_hub if missing
+        if ! python3 -c "import huggingface_hub" 2>/dev/null; then
+            echo "       Installing huggingface_hub..."
+            if ! pip3 install huggingface_hub 2>&1 | tail -2; then
+                echo -e "${YELLOW}WARNING: Failed to install huggingface_hub${NC}"
+                USE_TRT=false
+            fi
+        fi
+
+        # Auto-install onnx if missing
+        if [ "$USE_TRT" = true ] && ! python3 -c "import onnx" 2>/dev/null; then
+            echo "       Installing onnx..."
+            if ! pip3 install onnx 2>&1 | tail -2; then
+                echo -e "${YELLOW}WARNING: Failed to install onnx${NC}"
+                USE_TRT=false
+            fi
+        fi
+
+        # Download and embed model
+        if [ "$USE_TRT" = true ]; then
+            python3 << 'PYEOF'
+import os
+import sys
+try:
+    from huggingface_hub import snapshot_download
+    import onnx
+
+    onnx_dir = "models/onnx"
+    hf_download_dir = os.path.join(onnx_dir, "hf-download")
+    output_model = os.path.join(onnx_dir, "da3-small-embedded.onnx")
+
+    print("       Downloading ONNX model...")
+    snapshot_download(
+        repo_id="onnx-community/depth-anything-v3-small",
+        local_dir=hf_download_dir,
+        allow_patterns=["*.onnx", "*.onnx_data"]
+    )
+
+    print("       Embedding weights into single ONNX file...")
+    model_path = os.path.join(hf_download_dir, "onnx", "model.onnx")
+    model = onnx.load(model_path)
+    onnx.save(model, output_model, save_as_external_data=False)
+    print(f"       Created: {output_model}")
+except Exception as e:
+    print(f"ERROR: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+            if [ $? -ne 0 ]; then
+                echo -e "${YELLOW}WARNING: Failed to download ONNX model, falling back to PyTorch${NC}"
+                USE_TRT=false
+            fi
         fi
     fi
 
@@ -342,11 +377,34 @@ if [ "$USE_TRT" = true ]; then
     chmod 777 "$SHARED_DIR"
 
     # Check Python dependencies
-    if ! python3 -c "import tensorrt; import pycuda.driver" 2>/dev/null; then
-        echo -e "${YELLOW}WARNING: Host Python missing tensorrt or pycuda${NC}"
+    # Check TensorRT
+    if ! python3 -c "import tensorrt" 2>/dev/null; then
+        echo -e "${YELLOW}WARNING: TensorRT Python bindings not found${NC}"
         echo "       Falling back to PyTorch"
         USE_TRT=false
     else
+        # Auto-install numpy if missing
+        if ! python3 -c "import numpy" 2>/dev/null; then
+            echo "       Installing numpy..."
+            if ! pip3 install numpy 2>&1 | tail -2; then
+                echo -e "${YELLOW}WARNING: Failed to install numpy, falling back to PyTorch${NC}"
+                USE_TRT=false
+            fi
+        fi
+
+        # Auto-install pycuda if missing
+        if [ "$USE_TRT" = true ] && ! python3 -c "import pycuda.driver" 2>/dev/null; then
+            echo "       Installing pycuda (required for TRT inference)..."
+            if pip3 install pycuda 2>&1 | tail -3; then
+                echo -e "${GREEN}       pycuda installed successfully${NC}"
+            else
+                echo -e "${YELLOW}WARNING: Failed to install pycuda, falling back to PyTorch${NC}"
+                USE_TRT=false
+            fi
+        fi
+    fi
+
+    if [ "$USE_TRT" = true ]; then
         # Start TRT service
         python3 "$SCRIPT_DIR/trt_inference_service.py" \
             --engine "$TRT_ENGINE" \
@@ -423,7 +481,7 @@ echo ""
 echo -e "${BOLD}Demo Configuration:${NC}"
 echo "  Camera:     ${CAMERA_DEVICE:-"(topic: $IMAGE_TOPIC)"}"
 echo "  Image Topic: $IMAGE_TOPIC"
-echo "  Backend:    $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (~35 FPS)" || echo "PyTorch (~5 FPS)")"
+echo "  Backend:    $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (~40 FPS)" || echo "PyTorch (~5 FPS)")"
 echo "  RViz2:      $([ "$LAUNCH_RVIZ" = true ] && echo "Yes" || echo "No")"
 echo "  Monitor:    $([ "$LAUNCH_MONITOR" = true ] && echo "Yes" || echo "No")"
 echo ""

@@ -17,9 +17,12 @@
 #   /image_raw (sub)                           TRT 10.3 engine
 #   /depth (pub)                               ~30 FPS inference
 #
-# Performance: 35.3 FPS @ 518x518 (6.8x speedup over PyTorch)
+# Performance: 40 FPS @ 518x518 (7.7x speedup over PyTorch)
 
 set -e
+
+# Ensure ~/.local/bin is in PATH (pip installs CLI tools there)
+export PATH="$HOME/.local/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
@@ -102,24 +105,50 @@ mkdir -p "$ONNX_DIR" "$TRT_DIR"
 if [ ! -f "$ONNX_MODEL" ]; then
     echo "       Downloading from HuggingFace..."
 
-    # Check for huggingface-cli
-    if command -v huggingface-cli &> /dev/null; then
-        huggingface-cli download onnx-community/depth-anything-v3-small \
-            --local-dir "$ONNX_DIR/hf-download" \
-            --include "*.onnx" "*.onnx_data"
+    # Auto-install dependencies if not available
+    python3 -c "import huggingface_hub" 2>/dev/null || {
+        echo "       Installing huggingface_hub..."
+        pip3 install huggingface_hub 2>&1 | tail -1
+    }
 
-        # Embed external weights into single file
-        echo "       Embedding weights into single ONNX file..."
-        python3 -c "
-import onnx
-model = onnx.load('$ONNX_DIR/hf-download/onnx/model.onnx')
-onnx.save(model, '$ONNX_MODEL', save_as_external_data=False)
-print('       Created: $ONNX_MODEL')
-"
-    else
-        echo -e "${RED}ERROR: huggingface-cli not found${NC}"
-        echo "       Install with: pip install huggingface_hub"
-        echo "       Or manually download ONNX model to: $ONNX_MODEL"
+    python3 -c "import onnx" 2>/dev/null || {
+        echo "       Installing onnx..."
+        pip3 install onnx 2>&1 | tail -1
+    }
+
+    # Download and embed model using Python API (more reliable than CLI)
+    python3 << 'PYEOF'
+import os
+import sys
+
+try:
+    from huggingface_hub import snapshot_download
+    import onnx
+
+    onnx_dir = "models/onnx"
+    hf_download_dir = os.path.join(onnx_dir, "hf-download")
+    output_model = os.path.join(onnx_dir, "da3-small-embedded.onnx")
+
+    print("       Downloading ONNX model...")
+    snapshot_download(
+        repo_id="onnx-community/depth-anything-v3-small",
+        local_dir=hf_download_dir,
+        allow_patterns=["*.onnx", "*.onnx_data"]
+    )
+
+    print("       Embedding weights into single ONNX file...")
+    model_path = os.path.join(hf_download_dir, "onnx", "model.onnx")
+    model = onnx.load(model_path)
+    onnx.save(model, output_model, save_as_external_data=False)
+    print(f"       Created: {output_model}")
+
+except Exception as e:
+    print(f"ERROR: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}ERROR: Failed to download ONNX model${NC}"
         exit 1
     fi
 fi
@@ -183,12 +212,47 @@ if [ "$HOST_TRT" = true ]; then
     chmod 777 "$SHARED_DIR"
 
     # Check for required Python packages
-    if ! python3 -c "import tensorrt; import pycuda.driver" 2>/dev/null; then
-        echo -e "${RED}ERROR: Host Python missing tensorrt or pycuda${NC}"
-        echo "       Install with: pip3 install pycuda"
-        echo "       TensorRT Python bindings should be available via JetPack"
+    echo "       Checking Python dependencies..."
+
+    # Check TensorRT (should be available via JetPack)
+    if ! python3 -c "import tensorrt" 2>/dev/null; then
+        echo -e "${RED}ERROR: TensorRT Python bindings not found${NC}"
+        echo "       TensorRT should be available via JetPack 6.2+"
+        echo "       Try: sudo apt install python3-libnvinfer python3-libnvinfer-dev"
         exit 1
     fi
+
+    # Auto-install numpy if missing
+    if ! python3 -c "import numpy" 2>/dev/null; then
+        echo "       Installing numpy..."
+        if pip3 install numpy 2>&1 | tail -2; then
+            echo -e "${GREEN}       numpy installed successfully${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to install numpy${NC}"
+            exit 1
+        fi
+    fi
+
+    # Auto-install pycuda if missing
+    if ! python3 -c "import pycuda.driver" 2>/dev/null; then
+        echo "       Installing pycuda (required for TRT inference)..."
+        if pip3 install pycuda 2>&1 | tail -3; then
+            echo -e "${GREEN}       pycuda installed successfully${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to install pycuda${NC}"
+            echo "       Try manually: pip3 install pycuda"
+            exit 1
+        fi
+
+        # Verify installation
+        if ! python3 -c "import pycuda.driver" 2>/dev/null; then
+            echo -e "${RED}ERROR: pycuda installed but import failed${NC}"
+            echo "       This may indicate a CUDA configuration issue"
+            exit 1
+        fi
+    fi
+
+    echo -e "${GREEN}       TensorRT, numpy, and pycuda ready${NC}"
 
     # Start TRT inference service in background
     echo "       Starting inference service..."
@@ -237,7 +301,7 @@ echo "Resolution: 518x518 FP16"
 
 if [ "$HOST_TRT" = true ]; then
     echo -e "Mode:       ${CYAN}Host-Container Split (TRT on host)${NC}"
-    echo "Expected:   ~30-35 FPS"
+    echo "Expected:   ~40 FPS @ 518x518 (93 FPS @ 308x308)"
     echo ""
     echo "TRT Service: PID $TRT_SERVICE_PID (log: /tmp/trt_service.log)"
     echo "Shared Dir:  $SHARED_DIR"

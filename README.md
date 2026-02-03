@@ -43,7 +43,7 @@ This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), provi
 - **Docker Support**: Pre-configured Docker and Docker Compose files
 - **Example Images**: Sample test images and benchmark scripts included
 - **Performance Profiling**: Built-in benchmarking and profiling tools
-- **TensorRT Support**: Validated 6.8x speedup on Jetson (35.3 FPS) - see [TensorRT Status](#tensorrt-status-validated)
+- **TensorRT Support**: Validated 7.7x speedup on Jetson (40 FPS @ 518x518, 93 FPS @ 308x308) - see [TensorRT Status](#tensorrt-status-validated)
 - **Post-Processing**: Depth map filtering, hole filling, and enhancement
 - **INT8 Quantization**: Model compression for faster inference
 - **ONNX Export**: Deploy to various platforms and runtimes
@@ -516,7 +516,7 @@ bash scripts/demo.sh
 The demo script will:
 1. **Auto-detect cameras** (USB and CSI) and let you select if multiple are found
 2. **Build TensorRT engine** on first run (~2 minutes)
-3. **Start TRT inference service** for 35+ FPS performance
+3. **Start TRT inference service** for 40+ FPS performance (93+ FPS at 308x308)
 4. **Launch Docker container** with ROS2 depth estimation node
 5. **Open performance monitor** showing live FPS, latency, and GPU stats
 6. **Optionally launch RViz2** for visualization
@@ -577,8 +577,8 @@ The performance monitor displays real-time metrics:
 TensorRT Inference Service
 ----------------------------------------
   Status:     Running
-  FPS:        35.2
-  Latency:    28.4 ms
+  FPS:        40.1
+  Latency:    25.0 ms
   Frames:     1024
 
 GPU Resources
@@ -1120,11 +1120,11 @@ Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
 |-------|---------|------------|-----|----------------|
 | DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
 
-**Update (2026-01-31)**: TensorRT acceleration now validated with 6.8x speedup. See [TensorRT Status](#tensorrt-status-validated) below.
+**Update (2026-02-02)**: TensorRT acceleration validated with up to 17.8x speedup (93 FPS @ 308x308). See [TensorRT Status](#tensorrt-status-validated) and [Benchmarks](docs/JETSON_BENCHMARKS.md) for details.
 
 ### TensorRT Status: VALIDATED (Host-Container Split)
 
-TensorRT acceleration validated on Jetson Orin NX 16GB with **6.8x speedup** (35.3 FPS vs 5.2 FPS baseline).
+TensorRT acceleration validated on Jetson Orin NX 16GB with **7.7x speedup** (40 FPS @ 518x518, 93 FPS @ 308x308).
 
 #### Architecture: Host-Container Split
 
@@ -1157,18 +1157,23 @@ Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv
 - Container TRT 8.6 cannot build DA3 engines (DINOv2 incompatibility)
 - Host TRT 10.3 works perfectly (validated at 29.8ms latency)
 
-#### Validated Performance (2026-01-31)
+#### Validated Performance (2026-02-02)
 
 | Metric | Value |
 |--------|-------|
 | Platform | Jetson Orin NX 16GB |
-| JetPack | 6.2.1 (L4T R36.4.7) |
+| JetPack | 6.2 (L4T R36.4) |
 | TensorRT | 10.3.0.30 (host) |
-| Model | DA3-SMALL @ 518x518 FP16 |
-| Throughput | 35.3 FPS |
-| Latency (median) | 26.4ms |
-| Engine Size | 58MB |
-| Speedup | 6.8x vs PyTorch |
+| CUDA | 12.6 |
+
+| Configuration | FPS | Latency | Speedup |
+|--------------|-----|---------|---------|
+| DA3-Small @ 518x518 FP16 | **40 FPS** | 25.0ms | 7.7x |
+| DA3-Small @ 400x400 FP16 | **64 FPS** | 15.8ms | 12.2x |
+| DA3-Small @ 308x308 FP16 | **93 FPS** | 10.9ms | 17.8x |
+| DA3-Small @ 256x256 FP16 | **110 FPS** | 9.1ms | 21.2x |
+
+Thermal stability validated: 10-minute sustained load at 40.79 FPS with no throttling.
 
 #### Quick Start
 
@@ -1196,12 +1201,19 @@ See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for compl
 
 ### Validated TensorRT Performance
 
-Measured on Jetson Orin NX 16GB with TensorRT 10.3 (2026-01-31):
+Measured on Jetson Orin NX 16GB with TensorRT 10.3 (2026-02-02):
 
-| Model | Backend | Resolution | FPS | GPU Latency | Speedup vs PyTorch |
-|-------|---------|------------|-----|-------------|-------------------|
-| DA3-SMALL | TensorRT FP16 | 518x518 | 35.3 | 26.4ms (median) | 6.8x |
-| DA3-SMALL | PyTorch FP32 | 518x518 | 5.2 | ~193ms | Baseline |
+| Model | Backend | Resolution | FPS | Latency | Speedup |
+|-------|---------|------------|-----|---------|---------|
+| DA3-Small | TensorRT FP16 | 518x518 | **40.1** | 25.0ms | 7.7x |
+| DA3-Small | TensorRT FP16 | 400x400 | **63.6** | 15.8ms | 12.2x |
+| DA3-Small | TensorRT FP16 | 308x308 | **92.6** | 10.9ms | 17.8x |
+| DA3-Small | TensorRT FP16 | 256x256 | **110.2** | 9.1ms | 21.2x |
+| DA3-Base | TensorRT FP16 | 518x518 | **19.2** | 51.4ms | - |
+| DA3-Large | TensorRT FP16 | 518x518 | **7.5** | 132.2ms | - |
+| DA3-Small | PyTorch FP32 | 518x518 | ~5.2 | ~193ms | Baseline |
+
+See [docs/JETSON_BENCHMARKS.md](docs/JETSON_BENCHMARKS.md) for comprehensive benchmarks.
 
 ### Optimization Tips (Current)
 
