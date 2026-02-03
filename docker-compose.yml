@@ -24,7 +24,7 @@ services:
       - ./models:/root/.cache/huggingface:rw
       - ./examples:/examples:ro
       - ./config:/app/config:ro
-    command: bash
+    command: bash -c "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && exec bash"
 
   # GPU-enabled deployment (requires nvidia-docker)
   depth-anything-3-gpu:
@@ -57,7 +57,7 @@ services:
       - ./config:/app/config:ro
       - /dev:/dev:rw  # For camera access
     privileged: true  # Required for camera access
-    command: bash
+    command: bash -c "source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && exec bash"
 
   # Jetson ARM64 deployment (for NVIDIA Jetson devices)
   # Requires JetPack 6.2+ (L4T R36.4.x) with TensorRT 10.3 on host
@@ -106,7 +106,7 @@ services:
       - /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10:ro
       - /usr/lib/aarch64-linux-gnu/libnvonnxparser.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvonnxparser.so.10:ro
     privileged: true
-    command: bash
+    command: bash -c "source /opt/ros/humble/install/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && exec bash"
 
   # Development environment with mounted source
   depth-anything-3-dev:

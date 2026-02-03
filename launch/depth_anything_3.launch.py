@@ -111,6 +111,13 @@ def generate_launch_description():
             description='Log per-frame inference time and performance metrics'
         ),
 
+        # Jetson TRT mode (host-container split)
+        DeclareLaunchArgument(
+            'use_shared_memory',
+            default_value='false',
+            description='Use shared memory for host TRT service communication (Jetson only)'
+        ),
+
         # Node
         Node(
             package='depth_anything_3_ros2',
@@ -136,6 +143,7 @@ def generate_launch_description():
                 'queue_size': LaunchConfiguration('queue_size'),
                 'processing_threads': LaunchConfiguration('processing_threads'),
                 'log_inference_time': LaunchConfiguration('log_inference_time'),
+                'use_shared_memory': LaunchConfiguration('use_shared_memory'),
             }]
         ),
     ])
