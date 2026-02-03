@@ -175,6 +175,36 @@ bash scripts/benchmark_models.sh
 | Date | Changes |
 |------|---------|
 | 2026-02-02 | Initial benchmarks on Jetson Orin NX 16GB |
+| 2026-02-02 | Added thermal/stability validation (10-min sustained load test) |
+
+---
+
+## Thermal/Stability Validation
+
+### 10-Minute Sustained Load Test
+
+Test performed with DA3-Small @ 518x518 under continuous inference load.
+
+| Metric | Value |
+|--------|-------|
+| Duration | 600.06 seconds |
+| Status | **PASSED** |
+| Throughput | 40.79 FPS |
+| Latency (mean) | 24.73ms |
+| Latency (min) | 24.25ms |
+| Latency (max) | 27.88ms |
+| Latency (p99) | 25.19ms |
+
+### Stability Analysis
+
+- **FPS Stability:** Maintained consistent 40.79 FPS throughout 10-minute test
+- **Latency Variance:** Only 3.63ms spread (min to max) indicating stable thermals
+- **Thermal Throttling:** None detected (performance remained constant)
+- **p99 Latency:** 25.19ms ensures predictable real-time behavior
+
+### Conclusions
+
+The Jetson Orin NX 16GB demonstrates excellent thermal stability for sustained DA3 inference workloads. No performance degradation was observed over the 10-minute test period, making it suitable for continuous robotics applications.
 
 ---
 
