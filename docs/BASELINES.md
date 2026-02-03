@@ -1,183 +1,85 @@
 # Performance Baselines
 
-This document records measured performance baselines for future reference and comparison.
+This document records measured performance baselines for the Depth Anything 3 ROS2 Wrapper.
 
 ---
 
-## Jetson Orin NX 16GB
+## Jetson Orin NX 16GB - Validated Results
 
-**Test Date**: 2026-01-30
-**JetPack**: 6.0 (L4T r36.2.0)
-**CUDA**: 12.2
-**PyTorch**: 2.3.0
-**torchvision**: 0.18.0 (built from source)
-**TensorRT**: 8.6.2 (not currently usable - opset incompatibility)
-
-### DA3-SMALL (PyTorch FP32)
-
-| Metric | Value |
-|--------|-------|
-| Input Resolution | 518x518 |
-| Inference Time | ~193ms |
-| FPS | ~5.2 |
-| GPU Memory | ~2GB (estimated) |
-| Backend | PyTorch FP32 |
-
-### Test Conditions
-
-- **Image Source**: Static test images
-- **Warm-up**: 10 frames discarded before measurement
-- **Measurement**: Average over 100 frames
-- **Power Mode**: MAXN (15W)
-- **Cooling**: Stock heatsink with fan
-
-### Docker Build Statistics
-
-| Metric | Value |
-|--------|-------|
-| Base Image | dustynv/ros:humble-ros-base-l4t-r36.2.0 |
-| Final Image Size | ~14.9GB |
-| Build Time | ~45 minutes |
-
----
-
-## TensorRT 10.3 - Validated Performance (2026-01-31)
-
-### Solution Validation
-
-| Aspect | Details |
-|--------|---------|
-| **Previous Issue** | TensorRT 8.6.2 incompatible with DINOv2 Einsum ops |
-| **Solution** | Docker image updated to L4T r36.4.0 (TensorRT 10.3) |
-| **Status** | Validated - Phase 1 complete |
-| **Validated FPS** | 35.3 FPS with TensorRT FP16 |
-
-### Validated Performance Metrics
-
-**Test Date**: 2026-01-31
-**Platform**: Jetson Orin NX 16GB
-**JetPack**: 6.2 (L4T r36.4.0)
-**TensorRT**: 10.3
+**Test Date**: 2026-02-02
+**JetPack**: 6.2 (L4T r36.4)
+**TensorRT**: 10.3.0.30
 **CUDA**: 12.6
-**Model**: DA3-SMALL
-**Resolution**: 518x518
-**Precision**: FP16
+
+### TensorRT FP16 Performance
+
+#### Resolution Benchmarks (DA3-Small)
+
+| Resolution | Throughput | Latency (mean) | Latency (p99) | Speedup vs PyTorch |
+|------------|------------|----------------|---------------|-------------------|
+| 518x518 | **40.1 FPS** | 25.0ms | 25.6ms | 7.7x |
+| 400x400 | **63.6 FPS** | 15.8ms | 16.4ms | 12.2x |
+| 308x308 | **92.6 FPS** | 10.9ms | 11.1ms | 17.8x |
+| 256x256 | **110.2 FPS** | 9.1ms | 9.3ms | 21.2x |
+
+#### Model Size Benchmarks (518x518)
+
+| Model | Parameters | Throughput | Latency (mean) | Engine Size |
+|-------|------------|------------|----------------|-------------|
+| DA3-Small | ~24M | **40.0 FPS** | 25.0ms | 64MB |
+| DA3-Base | ~97M | **19.2 FPS** | 51.4ms | 211MB |
+| DA3-Large | ~335M | **7.5 FPS** | 132.2ms | 674MB |
+
+#### Thermal Stability (10-Minute Sustained Load)
 
 | Metric | Value |
 |--------|-------|
-| Throughput | 35.3 FPS |
-| GPU Latency (median) | 26.4ms |
-| GPU Latency (min) | 25.5ms |
-| Engine Size | 58MB |
-| Speedup vs PyTorch | 6.8x |
-| Test Method | Host validation script |
+| Duration | 600.06 seconds |
+| Status | **PASSED** |
+| Throughput | 40.79 FPS (stable) |
+| Latency (mean) | 24.73ms |
+| Latency (min) | 24.25ms |
+| Latency (max) | 27.88ms |
+| Latency (p99) | 25.19ms |
+| Thermal Throttling | None detected |
 
-**Key Technical Details:**
-- Base image: `dustynv/ros:humble-pytorch-l4t-r36.4.0`
-- Build command: `--memPoolSize=workspace:2048MiB` (TRT 10.x syntax)
-- ONNX export: 5D input shape `pixel_values:1x1x3x518x518`
-- Validation script: `scripts/test_trt10.3_host.sh`
+### PyTorch Baseline (Pre-TensorRT)
 
-### torchvision Build Requirement
-
-| Aspect | Details |
-|--------|---------|
-| **Issue** | NVIDIA PyTorch wheel ABI mismatch |
-| **Impact** | pip-installed torchvision crashes on NMS operator |
-| **Solution** | Build torchvision from source |
-| **Build Time** | ~15 minutes additional |
-
-### ARM64 Runtime Patches
-
-| Package | Issue | Workaround |
-|---------|-------|------------|
-| pycolmap | No ARM64 wheel | Runtime patch in api.py |
-| evo | No ARM64 wheel | Runtime patch in api.py |
+| Model | Backend | Resolution | FPS | Inference Time |
+|-------|---------|------------|-----|----------------|
+| DA3-Small | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
 
 ---
 
-## Desktop GPU (Reference)
+## Test Conditions
 
-*To be measured on desktop GPU for comparison*
-
-### Expected Test Configuration
-
-| Component | Specification |
-|-----------|---------------|
-| GPU | NVIDIA RTX 3090 / 4090 |
-| CUDA | 12.x |
-| PyTorch | 2.x |
-| TensorRT | 10.x (opset 18+ support) |
-
-### Expected Performance Targets
-
-| Model | Backend | Expected FPS |
-|-------|---------|--------------|
-| DA3-SMALL | PyTorch FP32 | ~30-40 |
-| DA3-SMALL | TensorRT FP16 | ~60-80 |
-| DA3-BASE | PyTorch FP32 | ~20-25 |
-| DA3-BASE | TensorRT FP16 | ~40-50 |
+- **Power Mode**: MAXN (15W)
+- **Cooling**: Active fan cooling
+- **Benchmark Tool**: trtexec (TensorRT benchmark utility)
+- **Iterations**: 100 inference passes
+- **Warmup**: 2000ms
 
 ---
 
-## Comparison Targets
+## Key Technical Details
 
-### TensorRT Performance (When Available)
-
-Based on typical TensorRT speedups (2-4x over PyTorch), expected performance on Jetson Orin NX 16GB:
-
-| Model | Resolution | Backend | Expected FPS |
-|-------|------------|---------|--------------|
-| DA3-SMALL | 518x518 | TensorRT FP16 | ~15-20 |
-| DA3-SMALL | 308x308 | TensorRT FP16 | ~30-40 |
-| DA3-BASE | 518x518 | TensorRT FP16 | ~10-15 |
-
-**Note**: These are projected values. Actual performance depends on opset compatibility resolution.
+- **Architecture**: Host-Container Split (TRT on host, ROS2 in container)
+- **Base Image**: dustynv/ros:humble-ros-base-l4t-r36.2.0
+- **Build Command**: `--memPoolSize=workspace:2048MiB` (TRT 10.x syntax)
+- **ONNX Input Shape**: 5D `pixel_values:1x1x3xHxW`
 
 ---
 
-## Measurement Methodology
+## Recommendations
 
-### Standard Test Procedure
-
-1. **Start Container**
-   ```bash
-   docker compose up -d depth-anything-3-jetson
-   docker exec -it da3_ros2_jetson bash
-   ```
-
-2. **Run Node with Logging**
-   ```bash
-   ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-     image_topic:=/camera/image_raw \
-     model_name:=depth-anything/DA3-SMALL \
-     log_inference_time:=true
-   ```
-
-3. **Measure Topic Rate**
-   ```bash
-   ros2 topic hz /depth_anything_3/depth
-   ```
-
-4. **Monitor System**
-   ```bash
-   # GPU utilization
-   watch -n 1 nvidia-smi
-
-   # Thermal (Jetson)
-   tegrastats --interval 1000
-   ```
-
-### Reporting Format
-
-When adding new baselines, include:
-- Test date
-- Hardware specification
-- Software versions (JetPack, CUDA, PyTorch)
-- Model and resolution
-- Inference time and FPS
-- Test conditions (power mode, cooling, etc.)
+| Use Case | Configuration | FPS | Latency |
+|----------|---------------|-----|---------|
+| Real-time robotics | DA3-Small @ 308x308 | 93 | 11ms |
+| Balanced | DA3-Small @ 400x400 | 64 | 16ms |
+| High quality | DA3-Small @ 518x518 | 40 | 25ms |
+| Quality-focused | DA3-Base @ 518x518 | 19 | 51ms |
+| Offline processing | DA3-Large @ 518x518 | 7.5 | 132ms |
 
 ---
 
-**Last Updated**: 2026-01-30
+**Last Updated**: 2026-02-02
