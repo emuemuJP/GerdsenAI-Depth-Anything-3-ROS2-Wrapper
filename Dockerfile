@@ -348,12 +348,17 @@ ENV PYTHONPATH=/ros2_ws/install/depth_anything_3_ros2/lib/python3.10/site-packag
 # Source ROS2 workspace in bashrc (both user and system-wide for docker exec)
 # NOTE: dustynv Jetson containers use /opt/ros/humble/install/setup.bash
 #       Standard OSRF containers use /opt/ros/humble/setup.bash
-#       We source both paths with fallback to support all base images
-RUN echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> ~/.bashrc && \
-    echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc && \
-    echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> /etc/bash.bashrc && \
+#       We add sourcing BEFORE the "[ -z "$PS1" ] && return" line in .bashrc
+#       to ensure it runs for non-interactive shells (docker exec bash -c "...")
+RUN if grep -q 'PS1.*return' ~/.bashrc; then \
+        sed -i '/\[ -z "\$PS1" \] && return/i source /opt/ros/humble/install/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash\nsource /ros2_ws/install/setup.bash 2>/dev/null || true' ~/.bashrc; \
+    else \
+        echo "source /opt/ros/humble/install/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash" >> ~/.bashrc; \
+        echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc; \
+    fi && \
+    echo "source /opt/ros/humble/install/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc && \
     echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> /etc/bash.bashrc && \
-    echo "source /opt/ros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/install/setup.bash" >> /etc/profile.d/ros2.sh && \
+    echo "source /opt/ros/humble/install/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash" >> /etc/profile.d/ros2.sh && \
     echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> /etc/profile.d/ros2.sh && \
     chmod +x /etc/profile.d/ros2.sh 2>/dev/null || true
 
