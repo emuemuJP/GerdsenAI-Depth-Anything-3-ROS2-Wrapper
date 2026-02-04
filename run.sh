@@ -334,8 +334,14 @@ DOCKER_ARGS=(
     "-e" "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}"
 )
 
-# Add camera device
-DOCKER_ARGS+=("--device" "$CAMERA_DEVICE:$CAMERA_DEVICE")
+# Add camera device with full v4l2 access
+# v4l2 cameras need video group and proper device permissions for memory mapping
+DOCKER_ARGS+=(
+    "--device" "$CAMERA_DEVICE:$CAMERA_DEVICE"
+    "--group-add" "video"
+    "-v" "/dev:/dev:rw"
+    "--device-cgroup-rule" "c 81:* rmw"
+)
 
 # Add display if available
 if [ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ]; then
