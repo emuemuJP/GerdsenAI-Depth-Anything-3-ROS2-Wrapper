@@ -35,6 +35,21 @@ DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
 
 ---
 
+## Current Architecture Limitation (2026-02-04)
+
+**Host-Container File IPC** limits throughput to 10-15 FPS due to numpy file read/write overhead.
+
+| Architecture | TRT Inference | IPC Overhead | Total | FPS |
+|--------------|---------------|--------------|-------|-----|
+| Native (target) | ~26ms | 0ms | ~26ms | ~38 |
+| Host-Container File IPC (current) | ~50ms | ~40ms | ~90ms | ~11 |
+
+**Current Bottleneck:** TensorRT runs on host, ROS2 in container. Communication via `/tmp/da3_shared/` files (input.npy, output.npy) adds ~40ms per frame.
+
+**To achieve 30+ FPS:** Run TensorRT natively inside container (requires working TensorRT Python bindings in L4T r36.4.0 containers).
+
+---
+
 ## Validated Performance on Jetson Orin NX 16GB
 
 ### PyTorch Baseline

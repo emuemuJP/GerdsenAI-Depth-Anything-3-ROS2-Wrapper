@@ -5,7 +5,7 @@
 # This script handles everything needed to run the depth estimation demo:
 #   1. Builds Docker image (if not already built)
 #   2. Downloads ONNX model and builds TensorRT engine (first run only)
-#   3. Starts TensorRT inference service on host (40+ FPS)
+#   3. Starts TensorRT inference service on host (10-15 FPS with file IPC)
 #   4. Auto-detects camera (USB or CSI)
 #   5. Starts ROS2 container with camera and depth nodes
 #   6. Opens depth visualization window
@@ -376,7 +376,7 @@ fi
 echo ""
 echo -e "${BOLD}Demo Configuration:${NC}"
 echo "  Camera:   $CAMERA_DEVICE"
-echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (~40 FPS)" || echo "PyTorch (~5 FPS)")"
+echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (10-15 FPS via file IPC)" || echo "PyTorch (~5 FPS)")"
 echo "  Display:  $([ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ] && echo "Yes" || echo "Headless")"
 echo ""
 

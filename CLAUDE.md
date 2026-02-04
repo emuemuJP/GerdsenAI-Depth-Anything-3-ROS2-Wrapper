@@ -212,6 +212,17 @@ Due to broken TensorRT Python bindings in containers, we use a split architectur
 | `request`    | Container -> Host  | Timestamp signal                         |
 | `status`     | Host -> Container  | "ready", "complete:time", "error:msg"    |
 
+### Current Performance Status (2026-02-04)
+
+| Metric | Current | Target | Notes |
+|--------|---------|--------|-------|
+| FPS | 5-12 | >30 | File IPC overhead limits throughput |
+| TRT Inference | ~50ms | ~26ms | Host TRT working correctly |
+| GPU Utilization | 99% | - | GPU fully utilized during inference |
+| IPC Overhead | ~40ms | 0ms | File read/write bottleneck |
+
+**Optimization Path**: Native TensorRT in container would eliminate file IPC overhead and achieve 30+ FPS. Requires TensorRT Python bindings working in L4T r36.4.0 container.
+
 ## Architecture
 
 This is a ROS2 Humble wrapper for ByteDance's Depth Anything 3 monocular depth estimation, targeting >30 FPS on NVIDIA Jetson Orin AGX.
