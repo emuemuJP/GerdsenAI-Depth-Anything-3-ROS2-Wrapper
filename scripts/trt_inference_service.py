@@ -261,8 +261,17 @@ class InferenceService:
             return False
 
         try:
-            # Read request timestamp
-            request_time = float(REQUEST_PATH.read_text().strip())
+            # Read request timestamp with race condition handling
+            # The file may exist but be empty if caught during write
+            request_text = REQUEST_PATH.read_text().strip()
+            if not request_text:
+                # File exists but empty - caught during write, skip this iteration
+                return False
+            try:
+                request_time = float(request_text)
+            except ValueError:
+                # Invalid content, skip this iteration
+                return False
 
             # Load input tensor with validation
             if not INPUT_PATH.exists():

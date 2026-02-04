@@ -151,8 +151,10 @@ class SharedMemoryInference:
             os.fsync(f.fileno())
         temp_path.replace(INPUT_PATH)  # Atomic rename
 
-        # Signal new request with timestamp
-        REQUEST_PATH.write_text(str(time.time()))
+        # Signal new request with timestamp (atomic write to prevent race condition)
+        temp_request = REQUEST_PATH.parent / "request_tmp"
+        temp_request.write_text(str(time.time()))
+        temp_request.replace(REQUEST_PATH)  # Atomic rename
 
         # Wait for completion
         start_time = time.time()
