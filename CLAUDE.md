@@ -52,11 +52,8 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py image_topic:=/camer
 # Docker (GPU)
 docker-compose up -d depth-anything-3-gpu
 
-# Run live demo on Jetson
-bash scripts/jetson_demo.sh
-
-# Run demo (general)
-bash scripts/run_demo.sh
+# Run live demo (one-click from repo root)
+./run.sh
 ```
 
 ## Jetson Deployment
@@ -78,14 +75,17 @@ scp -i ~/.ssh/jetson_j4012 -r . gerdsenai@10.69.7.112:~/depth_anything_3_ros2/
 ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112 "cd ~/depth_anything_3_ros2 && <command>"
 ```
 
-### Deployment Script (Recommended)
+### One-Click Demo (Recommended)
 
-Use the deployment script which handles ONNX download, TRT engine build, and container setup:
+Use the `run.sh` script at repo root which handles everything:
 
 ```bash
 # On Jetson, after cloning:
 cd ~/depth_anything_3_ros2
-bash scripts/deploy_jetson.sh
+./run.sh                      # Auto-detect camera, build if needed
+./run.sh --camera /dev/video0 # Specify camera
+./run.sh --no-display         # Headless mode (SSH)
+./run.sh --rebuild            # Force rebuild Docker
 ```
 
 ### JetPack / L4T Version Notes

@@ -504,35 +504,34 @@ cat /tmp/da3_demo_logs/node_*.log
 
 ### TensorRT Demo (Jetson)
 
-For Jetson users, we provide a single-command demo script that handles everything automatically:
+For Jetson users, we provide a single-command demo script at the repo root that handles everything automatically:
 
 ```bash
-# Clone directly on Jetson (preferred - maintains git history)
-ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
+# Clone directly on Jetson
 git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git ~/depth_anything_3_ros2
 cd ~/depth_anything_3_ros2
-bash scripts/demo.sh
+
+# Run the demo (first run takes ~15-20 min for Docker build + TRT engine)
+./run.sh
 ```
 
-The demo script will:
-1. **Auto-detect cameras** (USB and CSI) and let you select if multiple are found
-2. **Build TensorRT engine** on first run (~2 minutes)
-3. **Start TRT inference service** for 40+ FPS performance (93+ FPS at 308x308)
-4. **Launch Docker container** with ROS2 depth estimation node
-5. **Open performance monitor** showing live FPS, latency, and GPU stats
-6. **Optionally launch RViz2** for visualization
+The `run.sh` script will:
+1. **Build Docker image** if not already built (~15-20 minutes first run)
+2. **Download ONNX model** from HuggingFace and build TensorRT engine (~2 minutes)
+3. **Auto-detect cameras** (USB and CSI)
+4. **Start TRT inference service** on host for 40+ FPS performance
+5. **Launch Docker container** with ROS2 depth estimation node
+
+Subsequent runs start in ~10 seconds.
 
 ### Demo Script Options
 
 ```bash
-bash scripts/demo.sh --help
+./run.sh --help
 
 Options:
   --camera DEVICE     Specify camera device (e.g., /dev/video0)
-  --topic TOPIC       Specify ROS2 image topic directly
-  --no-rviz           Skip RViz2 launch
-  --no-monitor        Skip performance monitor
-  --no-trt            Use PyTorch instead of TensorRT
+  --no-display        Run in headless mode (for SSH)
   --rebuild           Force rebuild Docker image
 ```
 
@@ -1180,11 +1179,11 @@ Thermal stability validated: 10-minute sustained load at 40.79 FPS with no throt
 
 ```bash
 cd ~/depth_anything_3_ros2
-bash scripts/deploy_jetson.sh --host-trt
+./run.sh
 ```
 
 This script:
-1. Verifies TensorRT 10.3 on host
+1. Builds Docker image if needed
 2. Downloads ONNX model if missing
 3. Builds TensorRT FP16 engine (~2 min)
 4. Starts host inference service
@@ -1194,8 +1193,8 @@ This script:
 
 | File | Purpose |
 |------|--------|
+| `run.sh` | One-click demo launcher (repo root) |
 | `scripts/trt_inference_service.py` | Host-side TRT inference service |
-| `scripts/deploy_jetson.sh` | Automated deployment |
 | `depth_anything_3_ros2/da3_inference.py` | Inference wrapper (shared memory) |
 
 See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for complete documentation.
