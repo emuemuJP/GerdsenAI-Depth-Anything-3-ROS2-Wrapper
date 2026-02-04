@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Always Follow These Guidelines
+
+## Always see if you have OSA TOOLS or Windows MCP tools available to help with tasks
+
 ## Jetson SSH Quick Reference
 
 - **Host**: `10.69.7.112` (Jetson device, could be Orin/Xavier/Thor NX/AGX/Nano etc.)
@@ -20,6 +24,7 @@ ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
 ## GitHub CLI Usage
 
 Use `gh` CLI for all GitHub interactions:
+
 ```bash
 # View issues
 gh issue list
@@ -32,6 +37,7 @@ gh pr view <number>
 # Check repo status
 gh repo view
 ```
+
 Always offer to pull down and review issues before beginning work.
 
 ## Always see if there are specialized agents to help with tasks and troubleshooting, orchestrate agents to work together
@@ -100,31 +106,36 @@ cd ~/depth_anything_3_ros2
 
 ### JetPack / L4T Version Notes
 
-| L4T Version | OpenCV | cuDNN | Base Image |
-|-------------|--------|-------|------------|
-| r36.2.0 | 4.8.1 | 8.x | dustynv/ros:humble-desktop-l4t-r36.2.0 |
-| r36.4.0 | 4.10.0 | 9.x | dustynv/ros:humble-desktop-l4t-r36.4.0 |
+| L4T Version | OpenCV | cuDNN | Base Image                              |
+|-------------|--------|-------|-----------------------------------------|
+| r36.2.0     | 4.8.1  | 8.x   | dustynv/ros:humble-desktop-l4t-r36.2.0  |
+| r36.4.0     | 4.10.0 | 9.x   | dustynv/ros:humble-desktop-l4t-r36.4.0  |
 
 **Important**: The `humble-pytorch` variant does NOT exist for r36.x. Use `humble-desktop` instead.
 
 ## Docker Build Known Issues (Jetson)
 
 ### 1. pip.conf Points to Unreliable Server
+
 dustynv base images configure pip to use `jetson.webredirect.org` which may be unreliable.
 **Fix**: Use `--index-url https://pypi.org/simple/` explicitly for pip installs.
 
 ### 2. OpenCV Version Check
+
 The Dockerfile validates OpenCV version. Supported versions:
+
 - 4.5.x (apt packages)
 - 4.8.x (L4T r36.2)
 - 4.10.x (L4T r36.4)
 
 ### 3. cuDNN Version Mismatch
+
 L4T r36.4.0 ships with cuDNN 9.x, but some PyTorch wheels expect cuDNN 8.
 **Fix**: For host-container TRT architecture, container doesn't need CUDA-accelerated PyTorch.
 Use CPU-only torchvision in container since TRT inference runs on host.
 
 ### 4. Base Image Selection
+
 ```dockerfile
 # WRONG - doesn't exist for r36.x
 FROM dustynv/ros:humble-pytorch-l4t-r36.4.0
@@ -141,28 +152,31 @@ Due to broken TensorRT Python bindings in containers, we use a split architectur
 - **Container**: Runs ROS2 nodes (camera driver, depth publisher)
 - **Communication**: File-based IPC via `/tmp/da3_shared/`
 
-| File | Direction | Format |
-|------|-----------|--------|
-| `input.npy` | Container -> Host | float32 [1,1,3,518,518] |
-| `output.npy` | Host -> Container | float32 [1,518,518] |
-| `request` | Container -> Host | Timestamp signal |
-| `status` | Host -> Container | "ready", "complete:time", "error:msg" |
+| File         | Direction          | Format                                   |
+|--------------|--------------------|------------------------------------------|
+| `input.npy`  | Container -> Host  | float32 [1,1,3,518,518]                  |
+| `output.npy` | Host -> Container  | float32 [1,518,518]                      |
+| `request`    | Container -> Host  | Timestamp signal                         |
+| `status`     | Host -> Container  | "ready", "complete:time", "error:msg"    |
 
 ## Architecture
 
 This is a ROS2 Humble wrapper for ByteDance's Depth Anything 3 monocular depth estimation, targeting >30 FPS on NVIDIA Jetson Orin AGX.
 
 ### 3-Layer Design
+
 - **Node Layer** (`depth_anything_3_node.py`, `*_optimized.py`): ROS2 interface, parameter handling, topic management
 - **Inference Layer** (`da3_inference.py`, `*_optimized.py`): Model loading via HuggingFace, CUDA/CPU inference
 - **Utility Layer** (`utils.py`, `gpu_utils.py`): Depth processing, colorization, GPU acceleration
 
 ### Dual Implementation Pattern
+
 - Standard nodes: Baseline functionality
 - Optimized nodes (`*_optimized.py`): TensorRT, async processing, >30 FPS target
 - Both expose identical ROS2 interfaces - changes to one should be reflected in the other
 
 ### Inference Wrapper Return Format
+
 ```python
 {'depth': np.ndarray,  # (H, W) float32
  'confidence': np.ndarray,  # (H, W) float32, optional
@@ -172,11 +186,13 @@ This is a ROS2 Humble wrapper for ByteDance's Depth Anything 3 monocular depth e
 ## Critical Design Principles
 
 ### Camera-Agnostic Design (Non-Negotiable)
+
 - NEVER add camera-specific logic to core modules
 - Camera integration ONLY via topic remapping and example launch files in `launch/examples/`
 - All cameras work through standard `sensor_msgs/Image` interface
 
 ### ROS2 Patterns
+
 - Use relative topic names with `~` prefix (e.g., `~/depth`, `~/image_raw`)
 - BEST_EFFORT QoS for image subscribers (allows frame drops)
 - Declare all parameters in node constructor
@@ -191,6 +207,7 @@ This is a ROS2 Humble wrapper for ByteDance's Depth Anything 3 monocular depth e
 ## Testing
 
 Tests use mocked DA3 model (doesn't require GPU):
+
 - `test/test_inference.py` - Unit tests for inference wrapper
 - `test/test_node.py` - Integration tests for ROS2 node
 - `test/test_generic_camera.py` - Camera-agnostic functionality
@@ -208,14 +225,15 @@ This repository includes specialized agents in `.claude/agents/`. Use them proac
 
 ### Available Agents
 
-| Agent | Domain | Use When |
-|-------|--------|----------|
-| `jetson-expert` | Hardware | Module selection, flashing, BSP, carrier boards, GPIO/CSI, thermal, boot issues |
+| Agent           | Domain   | Use When                                                                         |
+|-----------------|----------|----------------------------------------------------------------------------------|
+| `jetson-expert` | Hardware | Module selection, flashing, BSP, carrier boards, GPIO/CSI, thermal, boot issues  |
 | `nvidia-expert` | Software | CUDA, TensorRT, DeepStream, Isaac ROS, containers, profiling, PyTorch/TensorFlow |
 
 ### Agent Selection Guide
 
 **Hardware questions** -> `jetson-expert`:
+
 - "Which Jetson module should I use?"
 - "How do I flash JetPack 6.x?"
 - "Camera not detected on CSI port"
@@ -225,6 +243,7 @@ This repository includes specialized agents in `.claude/agents/`. Use them proac
 - "Device tree or pinmux setup"
 
 **Software questions** -> `nvidia-expert`:
+
 - "How do I convert ONNX to TensorRT?"
 - "Optimize inference performance"
 - "DeepStream pipeline design"
@@ -237,18 +256,19 @@ This repository includes specialized agents in `.claude/agents/`. Use them proac
 
 Some issues require both agents working together:
 
-| Scenario | Primary Agent | Secondary Agent | Reason |
-|----------|---------------|-----------------|--------|
-| Slow inference on Orin NX | `nvidia-expert` | `jetson-expert` | Software first, then check thermal/power |
-| Container can't access GPU | `nvidia-expert` | `jetson-expert` | Runtime config first, then driver/L4T check |
-| CSI camera not detected | `jetson-expert` | - | Hardware/device tree issue |
-| TensorRT build fails | `nvidia-expert` | - | Software/model issue |
-| JetPack 6.x upgrade | `jetson-expert` | `nvidia-expert` | Flash first, then container compatibility |
-| Performance varies wildly | `nvidia-expert` | `jetson-expert` | Profile first, then check thermal throttling |
+| Scenario                   | Primary Agent   | Secondary Agent  | Reason                                         |
+|----------------------------|-----------------|------------------|------------------------------------------------|
+| Slow inference on Orin NX  | `nvidia-expert` | `jetson-expert`  | Software first, then check thermal/power       |
+| Container can't access GPU | `nvidia-expert` | `jetson-expert`  | Runtime config first, then driver/L4T check    |
+| CSI camera not detected    | `jetson-expert` | -                | Hardware/device tree issue                     |
+| TensorRT build fails       | `nvidia-expert` | -                | Software/model issue                           |
+| JetPack 6.x upgrade        | `jetson-expert` | `nvidia-expert`  | Flash first, then container compatibility      |
+| Performance varies wildly  | `nvidia-expert` | `jetson-expert`  | Profile first, then check thermal throttling   |
 
 ### Proactive Agent Usage
 
 ALWAYS consider using specialized agents when:
+
 1. User mentions Jetson hardware or deployment -> Consider `jetson-expert`
 2. User asks about AI/ML optimization -> Consider `nvidia-expert`
 3. Troubleshooting involves both HW and SW -> Use both agents sequentially
