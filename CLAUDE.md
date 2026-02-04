@@ -21,24 +21,41 @@ Before attempting Jetson access or system commands, determine your environment:
 
 ### Environment-Specific Behavior
 
-| Environment | SSH Key Exists | Network Reachable | Action |
-|-------------|----------------|-------------------|--------|
-| Claude Code (local) | Yes | Yes | Use SSH commands directly |
-| Claude Cowork (cloud) | No | No | Use MCP tools or guide user |
-| Docker container | No | Maybe | Exit container, run on host |
+| Environment | SSH Access | Method |
+|-------------|------------|--------|
+| Claude Code (local) | Direct | `ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112` |
+| Claude Cowork (Mac) | Via osascript MCP | `mcp__Control_your_Mac__osascript` runs commands on host Mac |
+| Docker container | Exit first | Run SSH from host, not container |
 
-### If Running in Cowork (Cloud)
+### Cowork + osascript MCP (Preferred Method)
 
-When SSH key or network is unavailable:
+When running in Cowork on a Mac with the "Control your Mac" MCP enabled:
 
-1. **Check for MCP tools** that provide remote access (SSH MCP, terminal MCP)
-2. **Guide the user** to run commands locally via Claude Code
-3. **Provide commands** for user to copy/paste into their local terminal
-4. **Do NOT repeatedly attempt** SSH commands that will fail
+```applescript
+-- SSH command via osascript
+do shell script "ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112 '<command>'"
+```
 
-## Jetson SSH Quick Reference (Local Claude Code Only)
+This executes on the user's Mac, which has network access to `10.69.7.112` and the SSH key at `~/.ssh/jetson_j4012`.
 
-These commands work from the user's local machine with Claude Code:
+### X11 Display Setup for GUI Apps
+
+To run GUI apps (viewers, rqt) from Docker container on Jetson display:
+
+```bash
+# 1. Enable X11 access for Docker (run on Jetson host via SSH)
+export DISPLAY=:10
+export XAUTHORITY=/run/user/1000/gdm/Xauthority
+xhost +local:docker
+
+# 2. Run GUI app in container with display forwarding
+docker exec -e DISPLAY=:10 -e XAUTHORITY=/run/user/1000/gdm/Xauthority \
+  da3_ros2_jetson <command>
+```
+
+## Jetson SSH Quick Reference
+
+These commands work from Claude Code (direct) or Cowork (via osascript MCP):
 
 - **Host**: `10.69.7.112` (Jetson device on local network)
 - **User**: `gerdsenai`
