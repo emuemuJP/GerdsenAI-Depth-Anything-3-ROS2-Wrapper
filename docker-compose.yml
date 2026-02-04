@@ -68,7 +68,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_TYPE: jetson-base
-        L4T_VERSION: r36.2.0  # Base image - host TRT 10.3 mounted at runtime
+        L4T_VERSION: r36.4.0  # Base image - matches host L4T R36.4.x
     image: depth_anything_3_ros2:jetson
     container_name: da3_ros2_jetson
     stdin_open: true
