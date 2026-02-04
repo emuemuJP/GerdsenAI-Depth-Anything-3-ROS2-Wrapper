@@ -1,5 +1,15 @@
 # CLAUDE.md
 
+## Jetson SSH Quick Reference
+
+- **Host**: `10.69.7.112` (Jetson device, could be Orin/Xavier/Thor NX/AGX/Nano etc.)
+- **User**: `gerdsenai`
+- **Identity file**: `~/.ssh/jetson_j4012`
+
+```bash
+ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
+```
+
 ## Git Workflow (Non-Negotiable)
 
 - **USER MAKES ALL COMMITS AND PRs** - Claude must NEVER commit or create PRs
