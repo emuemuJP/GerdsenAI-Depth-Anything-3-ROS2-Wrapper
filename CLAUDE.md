@@ -1,10 +1,30 @@
 # CLAUDE.md
 
-## Always offer to pull down issues with Github CLI, address issues before beginning
+## Git Workflow (Non-Negotiable)
 
-## DO NOT MAKE ANY COMMITS, USER WILL MAKE COMMITS
+- **USER MAKES ALL COMMITS AND PRs** - Claude must NEVER commit or create PRs
+- **Always branch off `main`** - Create feature branches from main for all work
+- **Never commit directly to `main`** - All changes go through feature branches
+- When starting work, create a new branch: `git checkout -b feature/description main`
 
-## Always see if there are specialized agents to helps with tasks and troubleshooting, orchestrate agents to work together
+## GitHub CLI Usage
+
+Use `gh` CLI for all GitHub interactions:
+```bash
+# View issues
+gh issue list
+gh issue view <number>
+
+# View PRs
+gh pr list
+gh pr view <number>
+
+# Check repo status
+gh repo view
+```
+Always offer to pull down and review issues before beginning work.
+
+## Always see if there are specialized agents to help with tasks and troubleshooting, orchestrate agents to work together
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -32,9 +52,42 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py image_topic:=/camer
 # Docker (GPU)
 docker-compose up -d depth-anything-3-gpu
 
-# Deploy to Jetson (via SCP)
-scp -r . gerdsenai@10.69.7.112:~/depth_anything_3_ros2/
+# Run live demo on Jetson
+bash scripts/jetson_demo.sh
+
+# Run demo (general)
+bash scripts/run_demo.sh
 ```
+
+## Jetson Deployment
+
+Jetson Orin AGX is available at `10.69.7.112` with SSH keys configured (no password required).
+
+```bash
+# SSH to Jetson
+ssh gerdsenai@10.69.7.112
+
+# Deploy via SCP
+scp -r . gerdsenai@10.69.7.112:~/depth_anything_3_ros2/
+
+# Run commands remotely
+ssh gerdsenai@10.69.7.112 "cd ~/depth_anything_3_ros2 && <command>"
+```
+
+## Host-Container TensorRT Architecture
+
+Due to broken TensorRT Python bindings in containers, we use a split architecture:
+
+- **Host**: Runs `scripts/trt_inference_service.py` (TensorRT inference)
+- **Container**: Runs ROS2 nodes (camera driver, depth publisher)
+- **Communication**: File-based IPC via `/tmp/da3_shared/`
+
+| File | Direction | Format |
+|------|-----------|--------|
+| `input.npy` | Container -> Host | float32 [1,1,3,518,518] |
+| `output.npy` | Host -> Container | float32 [1,518,518] |
+| `request` | Container -> Host | Timestamp signal |
+| `status` | Host -> Container | "ready", "complete:time", "error:msg" |
 
 ## Architecture
 
