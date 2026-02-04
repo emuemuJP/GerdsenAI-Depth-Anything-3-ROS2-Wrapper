@@ -87,14 +87,17 @@ RUN apt-get update && apt-get install -y \
 #
 # IMPORTANT: OpenCV Conflict Resolution
 # --------------------------------------
-# The dustynv base image includes OpenCV 4.8.1 with CUDA support (opencv-dev, opencv-libs).
+# The dustynv base images include OpenCV with CUDA support:
+#   - L4T r36.2.0: OpenCV 4.8.1
+#   - L4T r36.4.0: OpenCV 4.10.0
 # ROS Humble apt packages (ros-humble-cv-bridge, ros-humble-vision-opencv) depend on
 # Ubuntu's OpenCV 4.5.4, which conflicts with the pre-installed version.
 #
-# Solution: Build cv_bridge and image_geometry from source against OpenCV 4.8.1.
+# Solution: Build cv_bridge and image_geometry from source against the installed OpenCV.
 # This preserves CUDA acceleration while providing ROS2 compatibility.
 # ==============================================================================
-FROM dustynv/ros:humble-pytorch-l4t-${L4T_VERSION} AS jetson-base
+# NOTE: humble-pytorch variant doesn't exist for r36.x - use humble-desktop instead
+FROM dustynv/ros:humble-desktop-l4t-${L4T_VERSION} AS jetson-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -104,13 +107,15 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o 
     && gpg --batch --yes --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg /tmp/ros.key \
     && rm /tmp/ros.key
 
-# Verify OpenCV 4.8.x is present (critical check - build will fail if missing)
+# Verify OpenCV 4.x is present (critical check - build will fail if missing)
+# Supported: 4.5.x (apt), 4.8.x (L4T r36.2), 4.10.x (L4T r36.4)
 RUN echo "=== Checking pre-installed OpenCV ===" && \
     pkg-config --modversion opencv4 && \
     OPENCV_VERSION=$(pkg-config --modversion opencv4) && \
     echo "Found OpenCV version: $OPENCV_VERSION" && \
     case "$OPENCV_VERSION" in \
-    4.8.*) echo "OpenCV 4.8.x detected - proceeding with source build of cv_bridge" ;; \
+    4.10.*) echo "OpenCV 4.10.x detected (L4T r36.4) - proceeding with source build of cv_bridge" ;; \
+    4.8.*) echo "OpenCV 4.8.x detected (L4T r36.2) - proceeding with source build of cv_bridge" ;; \
     4.5.*) echo "WARNING: OpenCV 4.5.x detected - apt packages should work, but we'll build from source anyway" ;; \
     *) echo "ERROR: Unexpected OpenCV version: $OPENCV_VERSION" && exit 1 ;; \
     esac
@@ -209,13 +214,18 @@ FROM ${BUILD_TYPE} AS builder
 
 ARG BUILD_TYPE
 
+# IMPORTANT: Override dustynv's pip configuration that points to unreliable jetson.webredirect.org
+# The base image sets PIP_INDEX_URL env var, so we must override it
+ENV PIP_INDEX_URL=https://pypi.org/simple/
+RUN rm -f /etc/pip.conf /root/.config/pip/pip.conf 2>/dev/null || true
+
 # Set working directory
 WORKDIR /tmp/build
 
 # Copy requirements
 COPY requirements.txt .
 
-# Upgrade pip
+# Upgrade pip (uses PyPI now that pip.conf is removed)
 RUN pip3 install --upgrade pip setuptools wheel
 
 # Install system libraries required by PyTorch on Jetson
@@ -235,6 +245,8 @@ RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
     # L4T r36.4.0 ships with CUDA 12.6 and cuDNN 9.x
     # Download PyTorch wheel from NVIDIA (JetPack 6.2 / L4T r36.4.0)
     # Note: PyTorch 2.3.0 wheel is compatible with both r36.2.0 and r36.4.0
+    # pip.conf removed at builder stage start, so this uses PyPI
+    pip3 install --no-cache-dir filelock typing-extensions sympy networkx jinja2 fsspec && \
     wget -q -O /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl \
     "https://nvidia.box.com/shared/static/mp164asf3sceb570wvjsrezk1p4ftj8t.whl" && \
     pip3 install --no-cache-dir /tmp/torch-2.3.0-cp310-cp310-linux_aarch64.whl && \
@@ -245,18 +257,12 @@ RUN if [ "$BUILD_TYPE" = "cuda-base" ]; then \
     --ignore-installed sympy; \
     fi
 
-# For Jetson: Build torchvision from source to match NVIDIA PyTorch ABI
-# This is required because PyPI torchvision wheels don't match NVIDIA PyTorch's C++ ABI
+# For Jetson: Skip torchvision source build - not needed for host-container TRT architecture
+# TensorRT inference runs on HOST (not in container), so container only needs basic vision ops
+# Install CPU-only torchvision from PyPI (sufficient for ROS2 image handling)
 RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
-    apt-get update && apt-get install -y --no-install-recommends \
-    libjpeg-dev zlib1g-dev libpython3-dev libopenblas-dev \
-    libavcodec-dev libavformat-dev libswscale-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    git clone --depth 1 --branch v0.18.0 https://github.com/pytorch/vision.git /tmp/torchvision && \
-    cd /tmp/torchvision && \
-    TORCH_CUDA_ARCH_LIST="8.7" FORCE_CUDA=1 python3 setup.py bdist_wheel && \
-    pip3 install --no-cache-dir dist/*.whl && \
-    cd / && rm -rf /tmp/torchvision; \
+    pip3 install --no-cache-dir torchvision --no-deps && \
+    pip3 install --no-cache-dir pillow; \
     fi
 
 # NOTE: PyTorch import verification deferred to runtime
@@ -264,7 +270,8 @@ RUN if [ "$BUILD_TYPE" = "jetson-base" ]; then \
 # torch.cuda.is_available() only works at runtime with GPU access
 
 # Install other Python dependencies
-RUN pip3 install --no-cache-dir \
+# --ignore-installed needed for sympy on Jetson (distutils-installed, cannot uninstall)
+RUN pip3 install --no-cache-dir --ignore-installed \
     "transformers>=4.35.0" \
     "huggingface-hub>=0.19.0" \
     "opencv-python>=4.8.0" \
