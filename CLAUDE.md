@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+Camera-agnostic ROS2 (Humble) wrapper for ByteDance's Depth Anything 3 monocular depth estimation, targeting real-time performance (>30 FPS) on NVIDIA Jetson Orin AGX.
+
+## Version Requirements
+
+- **ROS2**: Humble Hawksbill (also compatible with Jazzy/Iron)
+- **Python**: 3.10+
+- **Target Hardware**: NVIDIA Jetson Orin AGX (also supports desktop GPUs)
+
 ## Always Follow These Guidelines
 
 ## Environment Detection (Do This First)
@@ -247,16 +255,26 @@ Tests use mocked DA3 model (doesn't require GPU):
 - `config/params.yaml` - Default parameters
 - `.github/copilot-instructions.md` - Extended AI coding guidelines
 
+## Troubleshooting
+
+See these resources for common issues:
+
+- **README.md > Troubleshooting** - Model download, CUDA OOM, encoding issues
+- **docs/JETSON_DEPLOYMENT_GUIDE.md** - TensorRT setup, host-container architecture
+- **OPTIMIZATION_GUIDE.md** - Performance tuning, TensorRT compatibility
+
 ## Specialized Agents
 
 This repository includes specialized agents in `.claude/agents/`. Use them proactively for domain-specific tasks.
 
 ### Available Agents
 
-| Agent           | Domain   | Use When                                                                         |
-|-----------------|----------|----------------------------------------------------------------------------------|
-| `jetson-expert` | Hardware | Module selection, flashing, BSP, carrier boards, GPIO/CSI, thermal, boot issues  |
-| `nvidia-expert` | Software | CUDA, TensorRT, DeepStream, Isaac ROS, containers, profiling, PyTorch/TensorFlow |
+Located in `.claude/agents/`:
+
+| Agent | File | Domain | Use When |
+|-------|------|--------|----------|
+| `jetson-expert` | `jetson-expert.md` | Hardware | Module selection, flashing, BSP, carrier boards, GPIO/CSI, thermal, boot issues |
+| `nvidia-expert` | `nvidia-expert.md` | Software | CUDA, TensorRT, DeepStream, Isaac ROS, containers, profiling, PyTorch/TensorFlow |
 
 ### Agent Selection Guide
 
