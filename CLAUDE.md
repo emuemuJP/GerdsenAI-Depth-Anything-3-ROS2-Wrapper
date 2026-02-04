@@ -2,15 +2,45 @@
 
 ## Always Follow These Guidelines
 
-## Always see if you have OSA TOOLS or Windows MCP tools available to help with tasks
+## Environment Detection (Do This First)
 
-## Jetson SSH Quick Reference
+Before attempting Jetson access or system commands, determine your environment:
 
-- **Host**: `10.69.7.112` (Jetson device, could be Orin/Xavier/Thor NX/AGX/Nano etc.)
+### Check Available Tools
+
+1. **MCP Tools**: Check if OSA Tools, Windows MCP, or SSH MCP tools are available
+2. **Local Environment**: Test if `~/.ssh/jetson_j4012` exists and `10.69.7.112` is reachable
+
+### Environment-Specific Behavior
+
+| Environment | SSH Key Exists | Network Reachable | Action |
+|-------------|----------------|-------------------|--------|
+| Claude Code (local) | Yes | Yes | Use SSH commands directly |
+| Claude Cowork (cloud) | No | No | Use MCP tools or guide user |
+| Docker container | No | Maybe | Exit container, run on host |
+
+### If Running in Cowork (Cloud)
+
+When SSH key or network is unavailable:
+
+1. **Check for MCP tools** that provide remote access (SSH MCP, terminal MCP)
+2. **Guide the user** to run commands locally via Claude Code
+3. **Provide commands** for user to copy/paste into their local terminal
+4. **Do NOT repeatedly attempt** SSH commands that will fail
+
+## Jetson SSH Quick Reference (Local Claude Code Only)
+
+These commands work from the user's local machine with Claude Code:
+
+- **Host**: `10.69.7.112` (Jetson device on local network)
 - **User**: `gerdsenai`
 - **Identity file**: `~/.ssh/jetson_j4012`
 
 ```bash
+# Quick connectivity test (run this first)
+ping -c 1 10.69.7.112 && ls ~/.ssh/jetson_j4012
+
+# SSH to Jetson
 ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
 ```
 
@@ -40,9 +70,7 @@ gh repo view
 
 Always offer to pull down and review issues before beginning work.
 
-## Always see if there are specialized agents to help with tasks and troubleshooting, orchestrate agents to work together
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code and Claude Cowork when working with this repository.
 
 ## Build & Development Commands
 
