@@ -134,7 +134,7 @@ class SharedMemoryInference:
 
         Protocol:
         1. Preprocess image to tensor format expected by TRT engine
-        2. Write tensor to INPUT_PATH
+        2. Write tensor to INPUT_PATH (atomic via temp file + rename)
         3. Write timestamp to REQUEST_PATH to signal new request
         4. Wait for STATUS_PATH to show "complete"
         5. Read depth from OUTPUT_PATH
@@ -143,11 +143,18 @@ class SharedMemoryInference:
         # DA3 expects: (1, 1, 3, H, W) normalized float32
         input_tensor = self._preprocess_image(image)
 
-        # Write input tensor
-        np.save(INPUT_PATH, input_tensor)
+        # Write input tensor atomically (temp file + fsync + rename)
+        temp_path = INPUT_PATH.parent / "input_tmp.npy"
+        with open(temp_path, 'wb') as f:
+            np.save(f, input_tensor, allow_pickle=False)
+            f.flush()
+            os.fsync(f.fileno())
+        temp_path.replace(INPUT_PATH)  # Atomic rename
 
-        # Signal new request with timestamp
-        REQUEST_PATH.write_text(str(time.time()))
+        # Signal new request with timestamp (atomic write to prevent race condition)
+        temp_request = REQUEST_PATH.parent / "request_tmp"
+        temp_request.write_text(str(time.time()))
+        temp_request.replace(REQUEST_PATH)  # Atomic rename
 
         # Wait for completion
         start_time = time.time()

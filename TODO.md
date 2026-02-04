@@ -120,4 +120,33 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ---
 
-**Last Updated:** 2026-02-02
+## Phase 5: Live Demo System [IN PROGRESS]
+
+### Components Added
+- [x] `scripts/demo_depth_viewer.py` - ROS2 viewer with side-by-side camera + depth display
+- [x] `scripts/run_demo.sh` - Demo runner (starts TRT service, camera, depth node, viewer)
+- [x] `scripts/jetson_demo.sh` - Jetson-specific entrypoint for systems with local display
+- [x] Atomic IO for numpy files (prevents partial reads)
+- [x] Dockerfile ROS2 sourcing fix for non-interactive shells
+
+### Demo Features
+- Side-by-side camera feed and colorized TensorRT depth
+- FPS toggle display
+- Frame capture to `demo_captures/`
+- X11 support with SSH fallback (shows TRT stats instead of GUI)
+
+### Usage
+```bash
+# On Jetson with display
+bash scripts/jetson_demo.sh
+
+# General demo (container)
+bash scripts/run_demo.sh
+```
+
+### Pending
+- [ ] Merge TensorRT-Testing branch to main (PR pending)
+
+---
+
+**Last Updated:** 2026-02-03

@@ -44,7 +44,7 @@ Due to broken TensorRT Python bindings in available Jetson containers ([Issue #7
 
 **Why this approach:**
 - `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
-- `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
+- Using `dustynv/ros:humble-desktop-l4t-r36.4.0` (humble-pytorch variant doesn't exist)
 - Container TRT 8.6.2 cannot build DA3 engines (DINOv2 incompatibility)
 - Host TRT 10.3 works perfectly (validated at 25ms latency)
 

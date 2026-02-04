@@ -261,21 +261,38 @@ class InferenceService:
             return False
 
         try:
-            # Read request timestamp
-            request_time = float(REQUEST_PATH.read_text().strip())
+            # Read request timestamp with race condition handling
+            # The file may exist but be empty if caught during write
+            request_text = REQUEST_PATH.read_text().strip()
+            if not request_text:
+                # File exists but empty - caught during write, skip this iteration
+                return False
+            try:
+                request_time = float(request_text)
+            except ValueError:
+                # Invalid content, skip this iteration
+                return False
 
-            # Load input tensor
+            # Load input tensor with validation
             if not INPUT_PATH.exists():
                 return False
 
             input_tensor = np.load(INPUT_PATH)
+
+            # Validate input shape matches expected
+            expected_size = int(np.prod(self.engine.get_input_shape()))
+            if input_tensor.size != expected_size:
+                raise ValueError(
+                    f"Input size mismatch: got {input_tensor.size}, "
+                    f"expected {expected_size} for shape {self.engine.get_input_shape()}"
+                )
 
             # Run inference
             start = time.perf_counter()
             outputs = self.engine.infer(input_tensor)
             inference_time = time.perf_counter() - start
 
-            # Save output (primary depth output)
+            # Save output (primary depth output) - atomic write
             # Find the depth output tensor
             depth_key = None
             for key in outputs:
@@ -285,7 +302,13 @@ class InferenceService:
             if depth_key is None:
                 depth_key = list(outputs.keys())[0]
 
-            np.save(OUTPUT_PATH, outputs[depth_key])
+            # Atomic write: temp file + fsync + rename
+            temp_output = OUTPUT_PATH.parent / "output_tmp.npy"
+            with open(temp_output, 'wb') as f:
+                np.save(f, outputs[depth_key], allow_pickle=False)
+                f.flush()
+                os.fsync(f.fileno())
+            temp_output.replace(OUTPUT_PATH)
 
             # Update stats
             self.stats["frames"] += 1

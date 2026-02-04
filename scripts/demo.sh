@@ -1,5 +1,15 @@
 #!/bin/bash
-# Depth Anything V3 - Demo Script
+# DEPRECATED: Use ./run.sh at repo root instead
+#
+# This script is kept for backwards compatibility but may be removed in future versions.
+# The new ./run.sh script provides all functionality with a simpler interface:
+#   ./run.sh                      # Auto-detect everything
+#   ./run.sh --camera /dev/video0 # Specific camera
+#   ./run.sh --no-display         # Headless mode
+#   ./run.sh --rebuild            # Force rebuild
+#
+# ------------------------------------------------------------------
+# Depth Anything V3 - Demo Script (Legacy)
 # Single-command demo launcher for Jetson deployment
 #
 # Usage: bash scripts/demo.sh [options]

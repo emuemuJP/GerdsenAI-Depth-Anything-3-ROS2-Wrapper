@@ -504,34 +504,34 @@ cat /tmp/da3_demo_logs/node_*.log
 
 ### TensorRT Demo (Jetson)
 
-For Jetson users, we provide a single-command demo script that handles everything automatically:
+For Jetson users, we provide a single-command demo script at the repo root that handles everything automatically:
 
 ```bash
-# After SCP'ing to Jetson
-ssh gerdsenai@10.69.7.112
+# Clone directly on Jetson
+git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git ~/depth_anything_3_ros2
 cd ~/depth_anything_3_ros2
-bash scripts/demo.sh
+
+# Run the demo (first run takes ~15-20 min for Docker build + TRT engine)
+./run.sh
 ```
 
-The demo script will:
-1. **Auto-detect cameras** (USB and CSI) and let you select if multiple are found
-2. **Build TensorRT engine** on first run (~2 minutes)
-3. **Start TRT inference service** for 40+ FPS performance (93+ FPS at 308x308)
-4. **Launch Docker container** with ROS2 depth estimation node
-5. **Open performance monitor** showing live FPS, latency, and GPU stats
-6. **Optionally launch RViz2** for visualization
+The `run.sh` script will:
+1. **Build Docker image** if not already built (~15-20 minutes first run)
+2. **Download ONNX model** from HuggingFace and build TensorRT engine (~2 minutes)
+3. **Auto-detect cameras** (USB and CSI)
+4. **Start TRT inference service** on host for 40+ FPS performance
+5. **Launch Docker container** with ROS2 depth estimation node
+
+Subsequent runs start in ~10 seconds.
 
 ### Demo Script Options
 
 ```bash
-bash scripts/demo.sh --help
+./run.sh --help
 
 Options:
   --camera DEVICE     Specify camera device (e.g., /dev/video0)
-  --topic TOPIC       Specify ROS2 image topic directly
-  --no-rviz           Skip RViz2 launch
-  --no-monitor        Skip performance monitor
-  --no-trt            Use PyTorch instead of TensorRT
+  --no-display        Run in headless mode (for SSH)
   --rebuild           Force rebuild Docker image
 ```
 
@@ -1179,11 +1179,11 @@ Thermal stability validated: 10-minute sustained load at 40.79 FPS with no throt
 
 ```bash
 cd ~/depth_anything_3_ros2
-bash scripts/deploy_jetson.sh --host-trt
+./run.sh
 ```
 
 This script:
-1. Verifies TensorRT 10.3 on host
+1. Builds Docker image if needed
 2. Downloads ONNX model if missing
 3. Builds TensorRT FP16 engine (~2 min)
 4. Starts host inference service
@@ -1193,8 +1193,8 @@ This script:
 
 | File | Purpose |
 |------|--------|
+| `run.sh` | One-click demo launcher (repo root) |
 | `scripts/trt_inference_service.py` | Host-side TRT inference service |
-| `scripts/deploy_jetson.sh` | Automated deployment |
 | `depth_anything_3_ros2/da3_inference.py` | Inference wrapper (shared memory) |
 
 See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for complete documentation.
@@ -1367,6 +1367,24 @@ ros2 topic info /camera/image_raw
 # Enable performance logging
 --param log_inference_time:=true
 ```
+
+#### 6. Jetson Docker Build Failures
+
+**Error**: `dustynv/ros:humble-pytorch-l4t-r36.x.x` not found
+
+**Solution**: The humble-pytorch variant doesn't exist for L4T r36.x. Use `humble-desktop` instead:
+```dockerfile
+# In docker-compose.yml, set:
+L4T_VERSION: r36.4.0  # Uses humble-desktop variant
+```
+
+**Error**: `pip install` fails with connection errors to `jetson.webredirect.org`
+
+**Solution**: The dustynv base images configure pip to use an unreliable custom index. The Dockerfile includes `--index-url https://pypi.org/simple/` to override this.
+
+**Error**: `ImportError: libcudnn.so.8: cannot open shared object file`
+
+**Solution**: L4T r36.4.0 ships with cuDNN 9.x, but some PyTorch wheels expect cuDNN 8. For the host-container TRT architecture, the container doesn't need CUDA-accelerated PyTorch since TensorRT inference runs on the host. The Dockerfile uses CPU-only torchvision in the container.
 
 ---
 
