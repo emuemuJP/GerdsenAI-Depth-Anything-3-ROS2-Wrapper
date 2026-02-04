@@ -61,17 +61,66 @@ bash scripts/run_demo.sh
 
 ## Jetson Deployment
 
-Jetson Orin AGX is available at `10.69.7.112` with SSH keys configured (no password required).
+Jetson Orin AGX is available at `10.69.7.112`. SSH requires identity file.
 
 ```bash
-# SSH to Jetson
-ssh gerdsenai@10.69.7.112
+# SSH to Jetson (identity file required)
+ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
 
-# Deploy via SCP
-scp -r . gerdsenai@10.69.7.112:~/depth_anything_3_ros2/
+# Deploy via git clone (preferred - maintains git history)
+ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112 \
+  "git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git ~/depth_anything_3_ros2"
+
+# Or deploy via SCP (no git history)
+scp -i ~/.ssh/jetson_j4012 -r . gerdsenai@10.69.7.112:~/depth_anything_3_ros2/
 
 # Run commands remotely
-ssh gerdsenai@10.69.7.112 "cd ~/depth_anything_3_ros2 && <command>"
+ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112 "cd ~/depth_anything_3_ros2 && <command>"
+```
+
+### Deployment Script (Recommended)
+
+Use the deployment script which handles ONNX download, TRT engine build, and container setup:
+
+```bash
+# On Jetson, after cloning:
+cd ~/depth_anything_3_ros2
+bash scripts/deploy_jetson.sh
+```
+
+### JetPack / L4T Version Notes
+
+| L4T Version | OpenCV | cuDNN | Base Image |
+|-------------|--------|-------|------------|
+| r36.2.0 | 4.8.1 | 8.x | dustynv/ros:humble-desktop-l4t-r36.2.0 |
+| r36.4.0 | 4.10.0 | 9.x | dustynv/ros:humble-desktop-l4t-r36.4.0 |
+
+**Important**: The `humble-pytorch` variant does NOT exist for r36.x. Use `humble-desktop` instead.
+
+## Docker Build Known Issues (Jetson)
+
+### 1. pip.conf Points to Unreliable Server
+dustynv base images configure pip to use `jetson.webredirect.org` which may be unreliable.
+**Fix**: Use `--index-url https://pypi.org/simple/` explicitly for pip installs.
+
+### 2. OpenCV Version Check
+The Dockerfile validates OpenCV version. Supported versions:
+- 4.5.x (apt packages)
+- 4.8.x (L4T r36.2)
+- 4.10.x (L4T r36.4)
+
+### 3. cuDNN Version Mismatch
+L4T r36.4.0 ships with cuDNN 9.x, but some PyTorch wheels expect cuDNN 8.
+**Fix**: For host-container TRT architecture, container doesn't need CUDA-accelerated PyTorch.
+Use CPU-only torchvision in container since TRT inference runs on host.
+
+### 4. Base Image Selection
+```dockerfile
+# WRONG - doesn't exist for r36.x
+FROM dustynv/ros:humble-pytorch-l4t-r36.4.0
+
+# CORRECT
+FROM dustynv/ros:humble-desktop-l4t-r36.4.0
 ```
 
 ## Host-Container TensorRT Architecture
