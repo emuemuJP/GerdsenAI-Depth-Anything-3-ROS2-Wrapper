@@ -16,7 +16,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
 from cv_bridge import CvBridge, CvBridgeError
 
-from .da3_inference import DA3InferenceWrapper, SharedMemoryInference
+from .da3_inference import DA3InferenceWrapper, SharedMemoryInference, SharedMemoryInferenceFast
 from .utils import normalize_depth, colorize_depth, PerformanceMetrics
 
 
@@ -47,10 +47,27 @@ class DepthAnything3Node(Node):
         # Initialize inference backend
         try:
             if self.use_shared_memory:
-                self.get_logger().info(
-                    "Initializing SharedMemoryInference for host TRT communication"
-                )
-                self.model = SharedMemoryInference(timeout=1.0)
+                # Try fast SHM first (uses /dev/shm for ~15-25ms lower latency)
+                from pathlib import Path
+                if Path("/dev/shm/da3/status").exists():
+                    self.get_logger().info(
+                        "Initializing SharedMemoryInferenceFast (RAM-backed /dev/shm)"
+                    )
+                    self.model = SharedMemoryInferenceFast(timeout=0.5)
+                    if self.model.is_service_available:
+                        self.get_logger().info(
+                            "Fast SHM TRT service detected - expecting 20-30 FPS"
+                        )
+                    else:
+                        self.get_logger().warn(
+                            "Fast SHM service not ready - falling back to file IPC"
+                        )
+                        self.model = SharedMemoryInference(timeout=1.0)
+                else:
+                    self.get_logger().info(
+                        "Initializing SharedMemoryInference for host TRT communication"
+                    )
+                    self.model = SharedMemoryInference(timeout=1.0)
                 if self.model.is_service_available:
                     self.get_logger().info("Host TRT service detected and ready")
                 else:
