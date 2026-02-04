@@ -507,8 +507,9 @@ cat /tmp/da3_demo_logs/node_*.log
 For Jetson users, we provide a single-command demo script that handles everything automatically:
 
 ```bash
-# After SCP'ing to Jetson
-ssh gerdsenai@10.69.7.112
+# Clone directly on Jetson (preferred - maintains git history)
+ssh -i ~/.ssh/jetson_j4012 gerdsenai@10.69.7.112
+git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git ~/depth_anything_3_ros2
 cd ~/depth_anything_3_ros2
 bash scripts/demo.sh
 ```
@@ -1367,6 +1368,24 @@ ros2 topic info /camera/image_raw
 # Enable performance logging
 --param log_inference_time:=true
 ```
+
+#### 6. Jetson Docker Build Failures
+
+**Error**: `dustynv/ros:humble-pytorch-l4t-r36.x.x` not found
+
+**Solution**: The humble-pytorch variant doesn't exist for L4T r36.x. Use `humble-desktop` instead:
+```dockerfile
+# In docker-compose.yml, set:
+L4T_VERSION: r36.4.0  # Uses humble-desktop variant
+```
+
+**Error**: `pip install` fails with connection errors to `jetson.webredirect.org`
+
+**Solution**: The dustynv base images configure pip to use an unreliable custom index. The Dockerfile includes `--index-url https://pypi.org/simple/` to override this.
+
+**Error**: `ImportError: libcudnn.so.8: cannot open shared object file`
+
+**Solution**: L4T r36.4.0 ships with cuDNN 9.x, but some PyTorch wheels expect cuDNN 8. For the host-container TRT architecture, the container doesn't need CUDA-accelerated PyTorch since TensorRT inference runs on the host. The Dockerfile uses CPU-only torchvision in the container.
 
 ---
 
