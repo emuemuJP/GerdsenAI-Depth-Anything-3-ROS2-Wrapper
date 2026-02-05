@@ -1,6 +1,53 @@
 # Changelog
 
-## [Unreleased] - 2026-01-31
+## [Unreleased] - 2026-02-04
+
+### Shared Memory IPC Optimization - 4x Performance Improvement
+
+- **Shared Memory TRT Service** (`scripts/trt_inference_service_shm.py`):
+  - RAM-backed IPC via `/dev/shm/da3` using numpy.memmap
+  - Eliminates file I/O overhead from previous `/tmp/da3_shared` approach
+  - Pre-allocated fixed-size memory regions for zero-copy data transfer
+  - Performance: 23+ FPS (limited by camera), 43+ FPS processing capacity
+
+- **SharedMemoryInferenceFast Class** (`depth_anything_3_ros2/da3_inference.py`):
+  - New inference backend for fast shared memory communication
+  - Auto-detection of SHM service availability
+  - Fallback to file-based IPC if SHM not available
+
+- **Auto-Detection in Depth Node** (`depth_anything_3_ros2/depth_anything_3_node.py`):
+  - Automatically selects SharedMemoryInferenceFast when `/dev/shm/da3/status` exists
+  - Seamless fallback to SharedMemoryInference for backward compatibility
+
+- **Updated Scripts**:
+  - `run.sh`: Now uses `trt_inference_service_shm.py` by default
+  - `docker-compose.yml`: Added `/dev/shm/da3` volume mount
+
+| Metric | Before (File IPC) | After (Shared Memory) |
+|--------|-------------------|----------------------|
+| FPS | 5-12 | 23+ (camera-limited) |
+| Inference | ~50ms + 40ms IPC | ~15ms + 8ms IPC |
+| Total | ~90ms | ~23ms |
+| Capacity | ~11 FPS | 43+ FPS |
+
+### Documentation Updates
+
+- **README.md**:
+  - Added "Production Architecture" section with host-container split diagram
+  - Clarified TensorRT is the production backend, PyTorch is library dependency only
+  - Updated Performance section to show TensorRT as primary, PyTorch as baseline reference
+  - Added notes to CPU-only mode example clarifying it's for development/testing only
+  - Updated Key Files table to reference `trt_inference_service_shm.py`
+
+- **Architecture Clarification**:
+  - TensorRT 10.3 runs on Jetson HOST (not in container)
+  - Container uses SharedMemoryInferenceFast for IPC with host TRT service
+  - PyTorch installed in container as DA3 library dependency, not for inference
+  - `DA3InferenceWrapper` (PyTorch backend) exists only as development/fallback mode
+
+---
+
+## [0.2.0] - 2026-01-31
 
 ### TensorRT 10.3 Validation - Phase 1 Complete
 
@@ -118,3 +165,47 @@
   - Base image for Jetson changed from `nvcr.io/nvidia/l4t-ros` to `dustynv/ros` (no NGC auth required)
   - PyTorch installation method changed from pip index to direct wheel download
   - cv_bridge installation changed from apt to source build
+
+---
+
+## [0.1.1] - 2025-12-09
+
+### Fixed (PR #19)
+
+- **CI/CD Pipeline Fixes**:
+  - Resolved lint failures in flake8 configuration
+  - Fixed test mocking for ROS2 module imports
+  - Docker build improvements for reliability
+  - Updated `.github/workflows/ci.yml` for proper testing
+
+- **Code Quality**:
+  - Added `.flake8` configuration
+  - Updated `mypy.ini` and `pyproject.toml`
+  - Improved test coverage in `test/test_inference.py` and `test/test_node.py`
+
+---
+
+## [0.1.0] - 2025-11-19
+
+### Added (PR #13)
+
+- **Optimized Inference Pipeline**:
+  - `depth_anything_3_ros2/da3_inference_optimized.py`: TensorRT-optimized inference wrapper
+  - `depth_anything_3_ros2/depth_anything_3_node_optimized.py`: High-performance ROS2 node
+  - `depth_anything_3_ros2/gpu_utils.py`: GPU memory management utilities
+  - `launch/depth_anything_3_optimized.launch.py`: Launch file for optimized node
+
+- **TensorRT Conversion Tools**:
+  - `scripts/convert_to_tensorrt.py`: ONNX to TensorRT engine converter
+  - Support for FP16 and INT8 quantization
+
+- **OPTIMIZATION_GUIDE.md**:
+  - Comprehensive guide for achieving 30+ FPS on Jetson
+  - Performance benchmarks and tuning recommendations
+  - TensorRT engine building instructions
+
+### Performance Targets
+
+- Target: 30+ FPS on Jetson Orin AGX
+- TensorRT FP16: 7.7x speedup over PyTorch baseline
+- Validated: 40 FPS @ 518x518, 93 FPS @ 308x308
