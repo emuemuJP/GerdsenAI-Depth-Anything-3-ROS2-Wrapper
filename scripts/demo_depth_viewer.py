@@ -173,20 +173,22 @@ class DepthViewer:
 
 
 def check_trt_service():
-    """Check if the TRT inference service is running (started by run_demo.sh on host)."""
-    shared_dir = Path("/tmp/da3_shared")
-    status_file = shared_dir / "status"
+    """Check if the TRT inference service is running (started by run.sh on host)."""
+    # Prefer shared memory IPC, fall back to file-based
+    for shared_path in ["/dev/shm/da3", "/tmp/da3_shared"]:
+        shared_dir = Path(shared_path)
+        status_file = shared_dir / "status"
 
-    # Check if service is available via status file
-    if status_file.exists():
-        status = status_file.read_text().strip()
-        if status.startswith("ready") or status.startswith("complete"):
-            print("[OK] TRT inference service is running")
-            return True
+        # Check if service is available via status file
+        if status_file.exists():
+            status = status_file.read_text().strip()
+            if status.startswith("ready") or status.startswith("complete"):
+                print(f"[OK] TRT inference service is running ({shared_path})")
+                return True
 
     print("[WARN] TRT inference service not detected")
-    print("       Make sure to run: bash scripts/run_demo.sh")
-    print("       Or start manually: python3 scripts/trt_inference_service.py --engine <path>")
+    print("       Make sure to run: ./run.sh")
+    print("       Or start manually: python3 scripts/trt_inference_service_shm.py --engine <path>")
     return False
 
 
