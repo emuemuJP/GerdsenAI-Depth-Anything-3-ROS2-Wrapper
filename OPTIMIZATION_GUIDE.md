@@ -13,12 +13,14 @@ Use this table to find the recommended configuration for your Jetson:
 | **Orin Nano 4GB** | 4GB shared | DA3-Small | 308x308 | 40-45 | ~1.2GB |
 | **Orin Nano 8GB** | 8GB shared | DA3-Small | 308x308 | 45-50 | ~1.2GB |
 | **Orin NX 8GB** | 8GB shared | DA3-Small | 308x308 | 50-55 | ~1.2GB |
-| **Orin NX 16GB** | 16GB shared | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
+| **Jetson Orin NX 16GB**\* | 16GB shared | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
 | **AGX Orin 32GB** | 32GB shared | DA3-Base | 518x518 | 25-35 | ~2.5GB |
 | **AGX Orin 64GB** | 64GB shared | DA3-Base/Large | 518x518 | 20-35 | ~2.5-4GB |
 | **Xavier NX** | 8GB shared | DA3-Small | 308x308 | 15-25* | ~1.2GB |
 
 *Xavier NX requires JetPack 5.x with TensorRT 8.5+ (limited DA3 support)
+
+\*Validated on [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)
 
 **Key Notes:**
 - FPS values are TensorRT processing capacity. Real-world FPS may be limited by camera input rate (~24 FPS for USB cameras)
@@ -37,7 +39,7 @@ Use this table to find the recommended configuration for your Jetson:
 
 ## TensorRT Status (2026-02-05)
 
-**TensorRT acceleration validated on Jetson Orin NX 16GB.**
+**TensorRT acceleration validated on Jetson Orin NX 16GB ([Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)).**
 
 | Component | Previous (L4T r36.2.0) | Current (L4T r36.4.0) |
 |-----------|------------------------|----------------------|

@@ -3,7 +3,7 @@
 Performance benchmarks for Depth Anything 3 (DA3) models running on NVIDIA Jetson Orin NX 16GB with TensorRT 10.3 optimization.
 
 **Test Date:** February 2, 2026
-**Hardware:** Jetson Orin NX 16GB (JetPack 6.2)
+**Hardware:** Jetson Orin NX 16GB ([Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)), JetPack 6.2
 **TensorRT Version:** 10.3
 **Precision:** FP16
 

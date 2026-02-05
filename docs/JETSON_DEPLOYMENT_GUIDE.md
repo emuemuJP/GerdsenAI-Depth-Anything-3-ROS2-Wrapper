@@ -4,7 +4,7 @@
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Platform | Jetson Orin NX 16GB | Seeed reComputer |
+| Platform | Jetson Orin NX 16GB | [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html) |
 | JetPack | 6.2 (L4T R36.4) | Required for TRT 10.3 |
 | TensorRT | 10.3.0.30 | Host-side inference |
 | CUDA | 12.6 | Host |

@@ -9,9 +9,11 @@ Camera-agnostic ROS2 wrapper for [Depth Anything 3](https://github.com/ByteDance
 | Platform | Backend | Model | Resolution | FPS |
 |----------|---------|-------|------------|-----|
 | Orin AGX 64GB | PyTorch FP32 | DA3-Small | 518x518 | ~5 |
-| **Orin NX 16GB** | **TensorRT FP16** | **DA3-Small** | **518x518** | **23+ / 43+** |
+| **Jetson Orin NX 16GB**\* | **TensorRT FP16** | **DA3-Small** | **518x518** | **23+ / 43+** |
 
 *23+ FPS real-world (camera-limited), 43+ FPS processing capacity*
+
+\*Tested on [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)
 
 > **Jetson Users**: Host requires `numpy`, `pycuda`, and TensorRT Python bindings. `./run.sh` auto-installs these.
 
@@ -105,8 +107,10 @@ HOST (JetPack 6.x)
 |----------|-------|------------|--------------|--------|
 | Orin Nano 4GB/8GB | DA3-Small | 308x308 | 40-50 | ~1.2GB |
 | Orin NX 8GB | DA3-Small | 308x308 | 50-55 | ~1.2GB |
-| **Orin NX 16GB** | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
+| **Jetson Orin NX 16GB**\* | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
 | AGX Orin 32GB/64GB | DA3-Base | 518x518 | 25-35 | ~2.5GB |
+
+\*Validated on [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)
 
 See [Optimization Guide](OPTIMIZATION_GUIDE.md) for detailed benchmarks and tuning.
 
