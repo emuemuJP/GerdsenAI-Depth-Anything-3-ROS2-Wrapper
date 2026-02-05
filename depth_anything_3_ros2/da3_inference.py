@@ -1,12 +1,20 @@
 """
 Depth Anything 3 Inference Wrapper.
 
-This module provides a wrapper around the Depth Anything 3 model for efficient
-depth estimation with CUDA support and CPU fallback.
+This module provides inference backends for Depth Anything 3 depth estimation.
 
-Supports multiple backends:
-- PyTorch: Default, runs on GPU/CPU
-- SharedMemory: Communicates with host TensorRT service for TRT 10.3 inference
+PRODUCTION BACKEND (Recommended):
+- SharedMemoryInferenceFast: Communicates with host TensorRT 10.3 service via /dev/shm
+  - ~15ms inference + ~8ms IPC = ~23ms total frame time
+  - 23+ FPS real-world (camera-limited), 43+ FPS processing capacity
+  - Requires: Host running trt_inference_service_shm.py
+
+FALLBACK/DEVELOPMENT BACKENDS:
+- SharedMemoryInference: File-based IPC with host TRT service (slower, ~40ms IPC)
+- DA3InferenceWrapper: PyTorch backend for development/testing only (~5 FPS)
+
+For production deployment on Jetson, use ./run.sh which automatically starts
+the TRT service and configures shared memory IPC.
 """
 
 import logging
@@ -413,11 +421,19 @@ class SharedMemoryInferenceFast:
 
 class DA3InferenceWrapper:
     """
-    Wrapper class for Depth Anything 3 model inference.
+    PyTorch wrapper for Depth Anything 3 model inference.
+
+    WARNING: This backend is for DEVELOPMENT/TESTING ONLY.
+    For production deployment, use SharedMemoryInferenceFast with the host
+    TensorRT service (./run.sh) which provides 8-10x better performance.
 
     This class handles model loading from Hugging Face Hub, inference execution,
     and provides utilities for depth map processing with proper error handling
     and resource management.
+
+    Performance comparison (Jetson Orin NX 16GB):
+    - PyTorch (this class): ~5 FPS, ~193ms latency
+    - TensorRT (production): 23+ FPS, ~23ms latency
     """
 
     def __init__(
