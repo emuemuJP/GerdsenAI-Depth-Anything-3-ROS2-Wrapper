@@ -34,30 +34,60 @@ This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), provi
 
 ### Key Features
 
+- **TensorRT-Optimized**: Production backend using TensorRT 10.3 for maximum performance (40+ FPS on Jetson Orin NX)
 - **Camera-Agnostic Design**: Works with ANY camera publishing standard ROS2 image topics
-- **Multiple Model Support**: All DA3 variants (Small, Base, Large, Giant, Nested)
-- **CUDA Acceleration**: Optimized for NVIDIA GPUs with automatic CPU fallback
+- **Multiple Model Support**: All DA3 variants (Small, Base, Large) with TensorRT FP16
+- **Shared Memory IPC**: Low-latency host-container communication via `/dev/shm` (~23ms total frame time)
 - **Multi-Camera Support**: Run multiple instances for multi-camera setups
-- **Real-Time Performance**: Optimized for low latency on Jetson Orin AGX
+- **Real-Time Performance**: 23+ FPS real-world, 43+ FPS processing capacity on Jetson Orin NX 16GB
 - **Production Ready**: Comprehensive error handling, logging, and testing
-- **Docker Support**: Pre-configured Docker and Docker Compose files
-- **Example Images**: Sample test images and benchmark scripts included
+- **Docker Support**: Pre-configured Docker and Docker Compose files for Jetson
+- **One-Click Demo**: `./run.sh` handles everything (engine build, service start, container launch)
 - **Performance Profiling**: Built-in benchmarking and profiling tools
-- **TensorRT Support**: Validated 7.7x speedup on Jetson (40 FPS @ 518x518, 93 FPS @ 308x308) - see [TensorRT Status](#tensorrt-status-validated)
-- **Post-Processing**: Depth map filtering, hole filling, and enhancement
-- **INT8 Quantization**: Model compression for faster inference
-- **ONNX Export**: Deploy to various platforms and runtimes
+- **INT8 Quantization**: Model compression for even faster inference
 - **Complete Documentation**: Sphinx-based API docs with comprehensive tutorials
-- **CI/CD Ready**: GitHub Actions workflow for automated testing and validation
-- **Docker Testing**: Automated Docker image validation suite
 - **RViz2 Visualization**: Pre-configured visualization setup
+
+> **Important**: This project has migrated to **TensorRT as the production inference backend**. The architecture uses a host-container split where TensorRT 10.3 runs on the Jetson host for maximum performance (23+ FPS real-world, 43+ FPS capacity), while the ROS2 container communicates via shared memory IPC. PyTorch remains in the container only as a library dependency and development/testing fallback - it is NOT used for production inference.
+
+### Production Architecture
+
+This project uses a **host-container split architecture** optimized for Jetson deployment:
+
+```
++----------------------------------------------------------+
+|                    HOST (JetPack 6.x)                    |
+|  +----------------------------------------------------+  |
+|  |     TRT Inference Service (trt_inference_shm.py)   |  |
+|  |  - TensorRT 10.3 loads DA3 engine                  |  |
+|  |  - ~15ms inference latency                         |  |
+|  +----------------------------------------------------+  |
+|                          ^                               |
+|                          | /dev/shm/da3 (shared memory)  |
+|                          v                               |
+|  +----------------------------------------------------+  |
+|  |           Docker Container (L4T r36.4.0)           |  |
+|  |  - ROS2 Humble + camera drivers                    |  |
+|  |  - SharedMemoryInferenceFast (~8ms IPC)            |  |
+|  |  - Publishes /depth, /depth_colored topics         |  |
+|  +----------------------------------------------------+  |
++----------------------------------------------------------+
+```
+
+**Why this architecture:**
+- TensorRT 10.3+ required for DA3's DINOv2 backbone (TRT 8.x fails)
+- Container TRT bindings are broken in current dustynv images
+- Shared memory IPC reduces latency from ~40ms (file-based) to ~8ms
+- Total frame time: ~23ms (15ms inference + 8ms IPC)
 
 ### Supported Platforms
 
-- **Primary**: NVIDIA Jetson (JetPack 6.x)
-- **Compatible**: Any system with Ubuntu 22.04, ROS2 Humble, and CUDA 12.x
+- **Primary Target**: NVIDIA Jetson Orin NX/AGX (JetPack 6.x, TensorRT 10.3+)
 - **ROS2 Distribution**: Humble Hawksbill
+- **TensorRT**: 10.3+ required for DA3 model support (DINOv2 backbone)
 - **Python**: 3.10+
+
+> **Important**: TensorRT 10.3+ is required. Earlier versions (8.x) cannot compile the DINOv2 backbone.
 
 ---
 
@@ -235,7 +265,8 @@ sudo apt install -y \
 python3 -m venv ~/da3_venv
 source ~/da3_venv/bin/activate
 
-# Install PyTorch with CUDA support
+# Install PyTorch (required by DA3 library, NOT used for production inference)
+# Production uses TensorRT on the Jetson host - see run.sh
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # Install other dependencies
@@ -252,10 +283,7 @@ pip3 install transformers>=4.35.0 \
 pip3 install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
 ```
 
-**Note**: For CPU-only systems, install PyTorch without CUDA:
-```bash
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-```
+> **Note**: PyTorch is a library dependency for the DA3 Python package but is NOT used for production inference. Production deployment uses TensorRT 10.3 on the Jetson host via shared memory IPC. See [TensorRT Demo](#tensorrt-demo-jetson) for the recommended deployment path.
 
 #### Step 3: Clone and Build This ROS2 Wrapper
 
@@ -725,9 +753,9 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw
 ```
 
-### Example 7: CPU-Only Mode
+### Example 7: CPU-Only Mode (Development/Testing Only)
 
-Run on systems without CUDA:
+For development or testing on systems without CUDA. **Not recommended for production** - use TensorRT on Jetson for real-time performance:
 
 ```bash
 ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
@@ -735,6 +763,8 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   model_name:=depth-anything/DA3-BASE \
   device:=cpu
 ```
+
+> **Note**: CPU mode runs at ~1-2 FPS. For production deployment, use the TensorRT host-container architecture via `./run.sh`.
 
 ### Example 8: Custom Configuration
 
@@ -1112,41 +1142,53 @@ open build/html/index.html  # or xdg-open on Linux
 
 ## Performance
 
-### Current Status (PyTorch Baseline)
+### Production Performance (TensorRT)
 
-Measured on Jetson Orin NX 16GB (JetPack 6.0, L4T r36.2.0):
+This project uses TensorRT as the production inference backend. The host-container architecture with shared memory IPC achieves:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Real-World FPS** | **23+ FPS** | Limited by USB camera (~24 FPS input) |
+| Processing Capacity | 43+ FPS | Headroom for faster cameras |
+| TRT Inference | ~15ms | Host TensorRT 10.3 |
+| IPC Overhead | ~8ms | Shared memory (`/dev/shm/da3`) |
+| Total Frame Time | ~23ms | End-to-end latency |
+
+### PyTorch Baseline (Reference Only)
+
+PyTorch is NOT used for production. These numbers are provided as a baseline for comparison only:
 
 | Model | Backend | Resolution | FPS | Inference Time |
 |-------|---------|------------|-----|----------------|
 | DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
 
-**Update (2026-02-02)**: TensorRT acceleration validated with up to 17.8x speedup (93 FPS @ 308x308). See [TensorRT Status](#tensorrt-status-validated) and [Benchmarks](docs/JETSON_BENCHMARKS.md) for details.
+TensorRT provides up to **17.8x speedup** over PyTorch (93 FPS @ 308x308 raw TRT vs 5.2 FPS PyTorch).
 
-### TensorRT Status: VALIDATED (Host-Container Split)
+### TensorRT Status: VALIDATED (Host-Container Split with Shared Memory IPC)
 
-TensorRT acceleration validated on Jetson Orin NX 16GB with **7.7x speedup** (40 FPS @ 518x518, 93 FPS @ 308x308).
+TensorRT acceleration validated on Jetson Orin NX 16GB with **23+ FPS real-world performance** (43+ FPS processing capacity, limited by camera input).
 
-#### Architecture: Host-Container Split
+#### Architecture: Host-Container Split with Shared Memory
 
-Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv/jetson-containers#714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture:
+Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv/jetson-containers#714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture with optimized shared memory IPC:
 
 ```
 +----------------------------------------------------------+
 |                    HOST (JetPack 6.2+)                   |
 |  +----------------------------------------------------+  |
-|  |        TRT Inference Service (Python)              |  |
+|  |     TRT Inference Service (trt_inference_shm.py)   |  |
 |  |  - Loads engine with host TensorRT 10.3            |  |
-|  |  - Watches /tmp/da3_shared/ for input frames       |  |
-|  |  - Writes depth output to shared memory            |  |
+|  |  - RAM-backed IPC via /dev/shm/da3 (numpy.memmap)  |  |
+|  |  - ~15ms inference + ~8ms IPC = ~23ms total        |  |
 |  +----------------------------------------------------+  |
 |                          ^                               |
-|                          | shared memory                 |
+|                          | /dev/shm/da3 (shared memory)  |
 |                          v                               |
 |  +----------------------------------------------------+  |
-|  |           Docker Container (L4T r36.2.0)           |  |
+|  |           Docker Container (L4T r36.4.0)           |  |
 |  |  - ROS2 Humble + PyTorch                           |  |
 |  |  - Subscribes /image_raw, publishes /depth         |  |
-|  |  - Communicates with host TRT service              |  |
+|  |  - SharedMemoryInferenceFast for low-latency IPC   |  |
 |  +----------------------------------------------------+  |
 +----------------------------------------------------------+
 ```
@@ -1155,9 +1197,10 @@ Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv
 - `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
 - `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
 - Container TRT 8.6 cannot build DA3 engines (DINOv2 incompatibility)
-- Host TRT 10.3 works perfectly (validated at 29.8ms latency)
+- Host TRT 10.3 works perfectly (validated at 15ms inference latency)
+- Shared memory IPC (`/dev/shm/da3`) reduces overhead from ~40ms to ~8ms
 
-#### Validated Performance (2026-02-02)
+#### Validated Performance (2026-02-04)
 
 | Metric | Value |
 |--------|-------|
@@ -1165,6 +1208,19 @@ Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv
 | JetPack | 6.2 (L4T R36.4) |
 | TensorRT | 10.3.0.30 (host) |
 | CUDA | 12.6 |
+| IPC Method | Shared Memory (`/dev/shm/da3`) |
+
+**Real-World System Performance (with Shared Memory IPC):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Actual FPS** | **23+ FPS** | Limited by USB camera (~24 FPS input) |
+| Processing Capacity | 43+ FPS | Headroom for faster cameras |
+| TRT Inference | ~15ms | Host TensorRT 10.3 |
+| IPC Overhead | ~8ms | Shared memory (was ~40ms with file IPC) |
+| Total Frame Time | ~23ms | End-to-end latency |
+
+**Raw TensorRT Performance (benchmark, no IPC):**
 
 | Configuration | FPS | Latency | Speedup |
 |--------------|-----|---------|---------|
@@ -1173,7 +1229,7 @@ Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv
 | DA3-Small @ 308x308 FP16 | **93 FPS** | 10.9ms | 17.8x |
 | DA3-Small @ 256x256 FP16 | **110 FPS** | 9.1ms | 21.2x |
 
-Thermal stability validated: 10-minute sustained load at 40.79 FPS with no throttling.
+Thermal stability validated: 10-minute sustained load with no throttling.
 
 #### Quick Start
 
@@ -1194,8 +1250,9 @@ This script:
 | File | Purpose |
 |------|--------|
 | `run.sh` | One-click demo launcher (repo root) |
-| `scripts/trt_inference_service.py` | Host-side TRT inference service |
-| `depth_anything_3_ros2/da3_inference.py` | Inference wrapper (shared memory) |
+| `scripts/trt_inference_service_shm.py` | Host-side TRT inference service (shared memory) |
+| `depth_anything_3_ros2/da3_inference.py` | Inference wrapper with SharedMemoryInferenceFast |
+| `depth_anything_3_ros2/depth_anything_3_node.py` | ROS2 node with auto-detection of SHM service |
 
 See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for complete documentation.
 
