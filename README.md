@@ -13,7 +13,7 @@ Camera-agnostic ROS2 wrapper for [Depth Anything 3](https://github.com/ByteDance
 
 *23+ FPS real-world (camera-limited), 43+ FPS processing capacity*
 
-> **Jetson Users**: Install `pycuda` on your Jetson host. TensorRT runs on the host, not in Docker.
+> **Jetson Users**: Host requires `numpy`, `pycuda`, and TensorRT Python bindings. `./run.sh` auto-installs these.
 
 ---
 

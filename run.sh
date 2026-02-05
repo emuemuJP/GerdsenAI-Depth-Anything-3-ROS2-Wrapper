@@ -197,8 +197,21 @@ if [ "$USE_TRT" = true ]; then
     fi
 fi
 
-# Check pycuda (required for TRT service)
+# Check host dependencies for TRT service (numpy, pycuda)
 if [ "$USE_TRT" = true ]; then
+    # Check numpy (required for shared memory buffers)
+    if ! python3 -c "import numpy" 2>/dev/null; then
+        echo -e "${YELLOW}numpy not found, installing...${NC}"
+        if pip3 install "numpy>=1.24.0,<2.0" --break-system-packages 2>/dev/null || pip3 install "numpy>=1.24.0,<2.0" 2>/dev/null; then
+            echo -e "       ${GREEN}numpy installed${NC}"
+        else
+            echo -e "${YELLOW}WARNING: Could not install numpy${NC}"
+            echo "         Manual install: pip3 install numpy --break-system-packages"
+            USE_TRT=false
+        fi
+    fi
+
+    # Check pycuda (required for TRT service)
     if ! python3 -c "import pycuda.driver" 2>/dev/null; then
         echo -e "${YELLOW}pycuda not found, installing...${NC}"
         if pip3 install pycuda --break-system-packages 2>/dev/null || pip3 install pycuda 2>/dev/null; then

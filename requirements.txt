@@ -31,12 +31,19 @@ timm>=0.9.0
 # Rendering (required by DA3)
 gsplat>=1.0.0
 
+# ONNX (for TensorRT engine building)
+onnx>=1.14.0
+
 # Depth Anything 3 (install from source)
 # Install with: pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
 
-# Host TensorRT service (Jetson only, not needed in container)
-# pycuda  # Install on Jetson host: pip3 install pycuda --break-system-packages
-# tensorrt is a system package on Jetson, not pip-installable
+# Host TensorRT service (Jetson only - auto-installed by run.sh and install_dependencies.sh)
+# These run on the Jetson HOST, not in the container:
+# - numpy (shared memory buffers)
+# - pycuda (CUDA memory management)
+# - tensorrt (Python bindings)
+# - onnx (engine building)
+# Install manually if needed: pip3 install pycuda tensorrt --break-system-packages
 
 # Testing
 pytest>=7.0.0
