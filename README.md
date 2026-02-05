@@ -1,1478 +1,183 @@
 # Depth Anything 3 ROS2 Wrapper
 
-### 2026-02-05: TensorRT Migration Complete
+Camera-agnostic ROS2 wrapper for [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3) monocular depth estimation.
 
-| Platform | Backend | Model | Resolution | FPS | Notes |
-|----------|---------|-------|------------|-----|-------|
-| Orin AGX 64GB | PyTorch FP32 | DA3-Small | 518x518 | ~5 |  |
-| Orin NX 16GB | TensorRT FP16 | DA3-Small | 518x518 | **23+ / 43+** depending on camera stream |  |
+<img width="1720" alt="Demo" src="https://github.com/user-attachments/assets/4d2c1cdf-0d8c-448c-a3f9-8e3557e37d81" />
 
-**Jetson Host Requirements:** Install `pycuda` and have TensorRT 10.3+ available on your Jetson host for production inference. The TRT service runs on the host, not in Docker.
+## Performance (2026-02-05)
 
-<img width="3440" height="1440" alt="image" src="https://github.com/user-attachments/assets/4d2c1cdf-0d8c-448c-a3f9-8e3557e37d81" />
+| Platform | Backend | Model | Resolution | FPS |
+|----------|---------|-------|------------|-----|
+| Orin AGX 64GB | PyTorch FP32 | DA3-Small | 518x518 | ~5 |
+| **Orin NX 16GB** | **TensorRT FP16** | **DA3-Small** | **518x518** | **23+ / 43+** |
 
+*23+ FPS real-world (camera-limited), 43+ FPS processing capacity*
 
-## Acknowledgments and Credits
-
-This package would not be possible without the excellent work of the following projects and teams:
-
-### Depth Anything 3
-- **Team**: ByteDance Seed Team
-- **Repository**: [ByteDance-Seed/Depth-Anything-3](https://github.com/ByteDance-Seed/Depth-Anything-3)
-- **Paper**: [Depth Anything 3: A New Foundation for Metric and Relative Depth Estimation](https://arxiv.org/abs/2511.10647)
-- **Project Page**: https://depth-anything-3.github.io/
-
-This wrapper integrates the state-of-the-art Depth Anything 3 model for monocular depth estimation. All credit for the model architecture and training goes to the original authors.
-
-### Inspiration from Prior ROS2 Wrappers
-This package was inspired by the following excellent ROS2 wrapper implementations:
-
-- **Depth Anything V2 ROS2**: [grupo-avispa/depth_anything_v2_ros2](https://github.com/grupo-avispa/depth_anything_v2_ros2)
-- **Depth Anything ROS2**: [polatztrk/depth_anything_ros](https://github.com/polatztrk/depth_anything_ros)
-- **TensorRT Optimized Wrapper**: [scepter914/DepthAnything-ROS](https://github.com/scepter914/DepthAnything-ROS)
-
-Special thanks to these developers for demonstrating effective patterns for ROS2 integration.
+> **Jetson Users**: Install `pycuda` on your Jetson host. TensorRT runs on the host, not in Docker.
 
 ---
 
-## Overview
-
-This aims to be a camera-agnostic ROS2 wrapper for Depth Anything 3 (DA3), providing real-time monocular depth estimation from standard RGB images. This package is designed to work seamlessly with any camera publishing standard `sensor_msgs/Image` messages.
-
-### Key Features
-
-- **TensorRT-Optimized**: Production backend using TensorRT 10.3 for maximum performance (40+ FPS on Jetson Orin NX)
-- **Camera-Agnostic Design**: Works with ANY camera publishing standard ROS2 image topics
-- **Multiple Model Support**: All DA3 variants (Small, Base, Large) with TensorRT FP16
-- **Shared Memory IPC**: Low-latency host-container communication via `/dev/shm` (~23ms total frame time)
-- **Multi-Camera Support**: Run multiple instances for multi-camera setups
-- **Real-Time Performance**: 23+ FPS real-world, 43+ FPS processing capacity on Jetson Orin NX 16GB
-- **Production Ready**: Comprehensive error handling, logging, and testing
-- **Docker Support**: Pre-configured Docker and Docker Compose files for Jetson
-- **One-Click Demo**: `./run.sh` handles everything (engine build, service start, container launch)
-- **Performance Profiling**: Built-in benchmarking and profiling tools
-- **INT8 Quantization**: Model compression for even faster inference
-- **Complete Documentation**: Sphinx-based API docs with comprehensive tutorials
-- **RViz2 Visualization**: Pre-configured visualization setup
-
-> **Important**: This project has migrated to **TensorRT as the production inference backend**. The architecture uses a host-container split where TensorRT 10.3 runs on the Jetson host for maximum performance (23+ FPS real-world, 43+ FPS capacity), while the ROS2 container communicates via shared memory IPC. PyTorch remains in the container only as a library dependency and development/testing fallback - it is NOT used for production inference.
-
-### Production Architecture
-
-This project uses a **host-container split architecture** optimized for Jetson deployment:
-
-```
-+----------------------------------------------------------+
-|                    HOST (JetPack 6.x)                    |
-|  +----------------------------------------------------+  |
-|  |     TRT Inference Service (trt_inference_shm.py)   |  |
-|  |  - TensorRT 10.3 loads DA3 engine                  |  |
-|  |  - ~15ms inference latency                         |  |
-|  +----------------------------------------------------+  |
-|                          ^                               |
-|                          | /dev/shm/da3 (shared memory)  |
-|                          v                               |
-|  +----------------------------------------------------+  |
-|  |           Docker Container (L4T r36.4.0)           |  |
-|  |  - ROS2 Humble + camera drivers                    |  |
-|  |  - SharedMemoryInferenceFast (~8ms IPC)            |  |
-|  |  - Publishes /depth, /depth_colored topics         |  |
-|  +----------------------------------------------------+  |
-+----------------------------------------------------------+
-```
-
-**Why this architecture:**
-- TensorRT 10.3+ required for DA3's DINOv2 backbone (TRT 8.x fails)
-- Container TRT bindings are broken in current dustynv images
-- Shared memory IPC reduces latency from ~40ms (file-based) to ~8ms
-- Total frame time: ~23ms (15ms inference + 8ms IPC)
-
-### Supported Platforms
-
-- **Primary Target**: NVIDIA Jetson Orin NX/AGX (JetPack 6.x, TensorRT 10.3+)
-- **ROS2 Distribution**: Humble Hawksbill
-- **TensorRT**: 10.3+ required for DA3 model support (DINOv2 backbone)
-- **Python**: 3.10+
-
-> **Important**: TensorRT 10.3+ is required. Earlier versions (8.x) cannot compile the DINOv2 backbone.
-
----
-
-## Important: Dependencies and Model Downloads
-
-**You do NOT need to manually clone the ByteDance Depth Anything 3 repository.** The installation process handles everything automatically.
-
-### What Gets Installed
-
-**1. Python Package** (installed via pip in Step 2):
-- ByteDance DA3 Python API and inference code
-- Installed with: `pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git`
-- Pip handles cloning and installation automatically
-- One-time setup, no manual git clone needed
-
-**2. Pre-Trained Models** (downloaded automatically on first run):
-- Model weights download from [Hugging Face Hub](https://huggingface.co/depth-anything) on first use
-- Cached in `~/.cache/huggingface/hub/` for reuse
-- **Internet connection required** for initial download
-- Subsequent runs use cached models (no internet needed)
-
-**Summary**: Install the package once with pip (Step 2), then models download automatically when you first run the node.
-
-### Offline Operation (Robots Without Internet)
-
-For robots or systems without internet access, pre-download models on a connected machine:
-
-```bash
-# On a machine WITH internet connection:
-python3 -c "
-from transformers import AutoImageProcessor, AutoModelForDepthEstimation
-# Download model (only needs to be done once)
-AutoImageProcessor.from_pretrained('depth-anything/DA3-BASE')
-AutoModelForDepthEstimation.from_pretrained('depth-anything/DA3-BASE')
-print('Model downloaded to ~/.cache/huggingface/hub/')
-"
-
-# Copy the cache directory to your offline robot:
-# On source machine:
-tar -czf da3_models.tar.gz -C ~/.cache/huggingface .
-
-# On target robot (via USB drive, SCP, etc.):
-mkdir -p ~/.cache/huggingface
-tar -xzf da3_models.tar.gz -C ~/.cache/huggingface/
-```
-
-Alternatively, set a custom cache directory:
-
-```bash
-# Download to specific location
-export HF_HOME=/path/to/models
-python3 -c "from transformers import AutoModelForDepthEstimation; \
-            AutoModelForDepthEstimation.from_pretrained('depth-anything/DA3-BASE')"
-
-# On robot, point to the same location
-export HF_HOME=/path/to/models
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py
-```
-
-**Available Models:**
-- `depth-anything/DA3-SMALL` - Fastest, ~1.5GB download
-- `depth-anything/DA3-BASE` - Balanced, ~2.5GB download
-- `depth-anything/DA3-LARGE` - Best quality, ~4GB download
-- `depth-anything/DA3-GIANT` - Maximum quality, ~6.5GB download
-
----
-
-## Table of Contents
-
-- [Important: Dependencies and Model Downloads](#important-dependencies-and-model-downloads)
-  - [What Gets Installed](#what-gets-installed)
-  - [Offline Operation](#offline-operation-robots-without-internet)
-- [Installation](#installation)
-  - [Quick Install (Recommended)](#quick-install-recommended)
-  - [Prerequisites](#prerequisites)
-  - [Manual Installation](#manual-installation)
-  - [Docker Installation](#docker-deployment)
-- [Hardware Detection and Model Setup](#hardware-detection-and-model-setup)
-  - [Interactive Setup Script](#interactive-setup-script)
-  - [Platform Recommendations](#platform-recommendations)
-  - [Model Licensing](#model-licensing)
-- [Quick Start](#quick-start)
-- [Demo Mode (Jetson Deployment)](#demo-mode-jetson-deployment)
-  - [Full RViz Demo (Ubuntu Desktop)](#full-rviz-demo-ubuntu-desktop)
-  - [TensorRT Demo (Jetson)](#tensorrt-demo-jetson)
-  - [RViz2 Visualization](#rviz2-visualization)
-  - [Desktop Shortcuts](#desktop-shortcuts)
-  - [Performance Monitor](#performance-monitor)
-- [Configuration](#configuration)
-- [Usage Examples](#usage-examples)
-- [Docker Deployment](#docker-deployment)
-  - [Docker Environment Variables](#docker-environment-variables)
-- [Example Images and Benchmarks](#example-images-and-benchmarks)
-- [Performance](#performance)
-- [Documentation](#documentation)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [Citation](#citation)
-- [License](#license)
-
----
-
-## Installation
-
-### Quick Install (Recommended)
-
-For the fastest setup, use our automated installation script:
-
-```bash
-# Clone the repository
-git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
-cd GerdsenAI-Depth-Anything-3-ROS2-Wrapper
-
-# Run the dependency installer (handles everything automatically)
-bash scripts/install_dependencies.sh
-
-# Source the workspace
-source install/setup.bash
-
-# Run the demo
-./GerdsenAI-DA3-ROS2-Wrapper-demo_rviz_full.sh
-```
-
-The installation script automatically:
-- Detects your ROS2 distribution (Humble/Jazzy/Iron)
-- Installs all ROS2 packages (cv-bridge, rviz2, image-publisher, etc.)
-- Installs Python dependencies (PyTorch, OpenCV, transformers, etc.)
-- Installs the Depth Anything 3 package from ByteDance
-- Builds the ROS2 workspace
-- Downloads sample images
-
-### Prerequisites
-
-1. **ROS2 Humble** on Ubuntu 22.04:
-```bash
-# If not already installed
-sudo apt update
-sudo apt install ros-humble-desktop
-```
-
-2. **CUDA 12.x** (optional, for GPU acceleration):
-```bash
-# For Jetson Orin AGX, this comes with JetPack 6.x
-# For desktop systems, install CUDA Toolkit from NVIDIA
-nvidia-smi  # Verify CUDA installation
-```
-
-3. **Internet Connection** (for initial setup):
-- Required for Step 2 (pip install of DA3 package)
-- Required for Step 5 (model weights download from Hugging Face Hub)
-- See [Offline Operation](#offline-operation-robots-without-internet) if deploying to robots without internet
-
-### Manual Installation
-
-If you prefer manual installation or the script fails:
-
-#### Step 1: Install ROS2 Dependencies
-
-```bash
-sudo apt install -y \
-  ros-humble-cv-bridge \
-  ros-humble-sensor-msgs \
-  ros-humble-std-msgs \
-  ros-humble-image-transport \
-  ros-humble-image-publisher \
-  ros-humble-rviz2 \
-  ros-humble-rqt-image-view \
-  ros-humble-rclpy
-```
-
-#### Step 2: Install Python Dependencies
-
-```bash
-# Create and activate a virtual environment (recommended)
-python3 -m venv ~/da3_venv
-source ~/da3_venv/bin/activate
-
-# Install PyTorch (required by DA3 library, NOT used for production inference)
-# Production uses TensorRT on the Jetson host - see run.sh
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-
-# Install other dependencies
-pip3 install transformers>=4.35.0 \
-  huggingface-hub>=0.19.0 \
-  opencv-python>=4.8.0 \
-  pillow>=10.0.0 \
-  numpy>=1.24.0 \
-  timm>=0.9.0
-
-# Install ByteDance DA3 Python API (pip handles cloning automatically)
-# This provides the model inference code, NOT the pre-trained weights
-# Model weights will download from Hugging Face Hub on first run
-pip3 install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
-```
-
-> **Note**: PyTorch is a library dependency for the DA3 Python package but is NOT used for production inference. Production deployment uses TensorRT 10.3 on the Jetson host via shared memory IPC. See [TensorRT Demo](#tensorrt-demo-jetson) for the recommended deployment path.
-
-#### Step 3: Clone and Build This ROS2 Wrapper
-
-```bash
-# Navigate to your ROS2 workspace
-cd ~/ros2_ws/src  # Or create: mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-
-# Clone THIS ROS2 wrapper repository (not the ByteDance DA3 repo)
-git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
-
-# Build the package
-cd ~/ros2_ws
-colcon build --packages-select depth_anything_3_ros2
-
-# Source the workspace
-source install/setup.bash
-```
-
-### Step 4: Verify Installation
-
-```bash
-# Test that the package is found
-ros2 pkg list | grep depth_anything_3_ros2
-
-# Run tests (optional)
-colcon test --packages-select depth_anything_3_ros2
-colcon test-result --verbose
-```
-
-### Step 5: Model Setup (Recommended)
-
-Use the interactive setup script to detect your hardware and download the optimal model:
-
-```bash
-# Interactive setup (recommended) - detects hardware and recommends models
-python scripts/setup_models.py
-
-# Show detected hardware information only
-python scripts/setup_models.py --detect
-
-# List all available models with compatibility info
-python scripts/setup_models.py --list-models
-
-# Non-interactive installation of a specific model
-python scripts/setup_models.py --model DA3-SMALL --no-download
-
-# Override detected VRAM (useful for shared GPU systems)
-python scripts/setup_models.py --vram 8192
-```
-
-The setup script will:
-1. Detect your hardware platform (Jetson module, GPU, RAM)
-2. Show compatible models with recommendations
-3. Download selected model(s) from Hugging Face
-4. Generate an optimized configuration file
-
-See [Hardware Detection and Model Setup](#hardware-detection-and-model-setup) for detailed platform recommendations.
-
-**Manual Download (Alternative):**
-
-If you prefer to download models manually without the setup script:
-
-```bash
-# Download a specific model (requires internet connection)
-python3 -c "
-from transformers import AutoImageProcessor, AutoModelForDepthEstimation
-print('Downloading DA3-BASE model...')
-AutoImageProcessor.from_pretrained('depth-anything/DA3-BASE')
-AutoModelForDepthEstimation.from_pretrained('depth-anything/DA3-BASE')
-print('Model cached to ~/.cache/huggingface/hub/')
-print('You can now run offline!')
-"
-
-# For offline robots, copy the cache:
-# tar -czf da3_models.tar.gz -C ~/.cache/huggingface .
-# Transfer da3_models.tar.gz to robot and extract:
-# tar -xzf da3_models.tar.gz -C ~/.cache/huggingface/
-```
-
-See [Dependencies and Model Downloads](#important-dependencies-and-model-downloads) for complete offline deployment instructions.
-
----
-
-## Hardware Detection and Model Setup
-
-This package includes an interactive setup system that detects your hardware and recommends optimal model configurations.
-
-### Interactive Setup Script
-
-The `setup_models.py` script provides guided model selection based on your hardware:
-
-```bash
-cd ~/ros2_ws/src/GerdsenAI-Depth-Anything-3-ROS2-Wrapper
-
-# Run interactive setup
-python scripts/setup_models.py
-```
-
-Example output:
-```
-============================================================
-     Depth Anything 3 - Model Setup
-============================================================
-
-Detected Hardware:
-  Platform: Jetson Orin NX 16GB
-  RAM: 16.0 GB
-  GPU Memory: 16.0GB
-  GPU: NVIDIA Tegra Orin (nvgpu)
-  JetPack: 6.0
-  L4T: 36.3.0
-  CUDA Available: Yes
-
-Available Models:
-------------------------------------------------------------
-  [*] DA3-SMALL           (30M, 1.0GB)
-      License: Apache-2.0
-      Status: Compatible
-      Lightweight model for resource-constrained devices
-
-  [*] DA3-BASE            (100M, 2.0GB)
-      License: CC-BY-NC-4.0
-      Status: RECOMMENDED for your hardware
-      Balanced performance and accuracy
-...
-```
-
-### CLI Options
-
-| Option | Description |
-|--------|-------------|
-| `--detect` | Show hardware detection info only |
-| `--list-models` | List all available models with compatibility |
-| `--model MODEL` | Non-interactive install of specific model |
-| `--vram MB` | Override detected VRAM (useful for shared GPU) |
-| `--platform NAME` | Override detected platform |
-| `--no-download` | Skip downloading models (config only) |
-| `--no-config` | Skip generating config file |
-| `--all` | Show all models including incompatible ones |
-
-### Platform Recommendations
-
-The following table shows recommended models for each Jetson platform:
-
-| Platform | Recommended Model | Resolution | VRAM Usage |
-|----------|-------------------|------------|------------|
-| Orin Nano 4GB | DA3-SMALL | 308x308 | ~626MB |
-| Orin Nano 8GB | DA3-SMALL | 308x308 | ~626MB |
-| Orin NX 8GB | DA3-SMALL | 308x308 | ~626MB |
-| Orin NX 16GB | DA3-BASE | 518x518 | ~1.8GB |
-| AGX Orin 32GB | DA3-LARGE-1.1 | 518x518 | ~3.8GB |
-| AGX Orin 64GB | DA3-LARGE-1.1 | 1024x1024 | ~4.5GB |
-| Xavier NX | DA3-SMALL | 308x308 | ~626MB |
-| x86 with GPU | DA3-BASE or larger | 518x518+ | Varies |
-| CPU Only | DA3-SMALL | 308x308 | N/A |
-
-**Note**: Resolution must be divisible by 14 (ViT patch size). Common presets:
-- **Low**: 308x308 - Fastest, suitable for obstacle avoidance
-- **Medium**: 518x518 - Balanced speed and detail
-- **High**: 728x728 - More detail, slower inference
-- **Ultra**: 1024x1024 - Maximum detail, requires high-end GPU
-
-### Model Licensing
-
-Depth Anything 3 models have different licenses that affect commercial use:
-
-| Model | License | Commercial Use |
-|-------|---------|----------------|
-| DA3-SMALL | Apache-2.0 | Yes |
-| DA3-BASE | CC-BY-NC-4.0 | No (contact ByteDance) |
-| DA3-LARGE-1.1 | CC-BY-NC-4.0 | No (contact ByteDance) |
-| DA3-GIANT-1.1 | CC-BY-NC-4.0 | No (contact ByteDance) |
-| DA3METRIC-LARGE | CC-BY-NC-4.0 | No (contact ByteDance) |
-| DA3MONO-LARGE | CC-BY-NC-4.0 | No (contact ByteDance) |
-
-**Important**: Only `DA3-SMALL` is licensed for commercial use under Apache-2.0. All other models use CC-BY-NC-4.0 (non-commercial). For commercial applications with larger models, contact ByteDance for licensing.
+## Key Features
+
+- **TensorRT-Optimized**: 40+ FPS on Jetson via TensorRT 10.3
+- **Camera-Agnostic**: Works with any camera publishing ROS2 image topics
+- **One-Click Demo**: `./run.sh` handles everything automatically
+- **Shared Memory IPC**: Low-latency host-container communication (~8ms)
+- **Multiple Models**: DA3-Small, Base, Large with auto hardware detection
+- **Docker Support**: Pre-configured for Jetson deployment
 
 ---
 
 ## Quick Start
 
-### Single Camera (Generic USB Camera)
-
-The fastest way to get started is with a standard USB camera:
+### Option 1: Jetson TensorRT Demo (Recommended)
 
 ```bash
-# Terminal 1: Launch USB camera driver
-ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p image_size:="[640,480]" \
-  -r __ns:=/camera
-
-# Terminal 2: Launch Depth Anything 3
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  image_topic:=/camera/image_raw \
-  model_name:=depth-anything/DA3-BASE \
-  device:=cuda
-
-# Terminal 3: Visualize with RViz2
-rviz2 -d $(ros2 pkg prefix depth_anything_3_ros2)/share/depth_anything_3_ros2/rviz/depth_view.rviz
-```
-
-### Using Pre-Built Example Launch Files
-
-```bash
-# USB camera example (requires v4l2_camera)
-ros2 launch depth_anything_3_ros2 usb_camera_example.launch.py
-
-# Static image test (requires image_publisher)
-ros2 launch depth_anything_3_ros2 image_publisher_test.launch.py \
-  image_path:=/path/to/your/test_image.jpg
-```
-
----
-
-## Demo Mode (Jetson Deployment)
-
-### Full RViz Demo (Ubuntu Desktop)
-
-For a complete demonstration with multiple monitoring terminals and RViz2 visualization:
-
-```bash
-cd ~/depth_anything_3_ros2
-./GerdsenAI-DA3-ROS2-Wrapper-demo_rviz_full.sh
-```
-
-This script automatically:
-1. Sources ROS2 (Humble/Jazzy/Iron) if not already sourced
-2. Builds the workspace if not already built
-3. Installs missing dependencies (e.g., ros-humble-image-publisher)
-4. Downloads sample images if needed
-5. Opens 5 gnome-terminal windows:
-   - Terminal 1: Node + Image Publisher (main depth estimation)
-   - Terminal 2: RViz2 visualization
-   - Terminal 3: Topic monitoring (frequency, messages)
-   - Terminal 4: Parameter inspection
-   - Terminal 5: Additional topics (confidence, colored depth)
-6. Logs all output to `/tmp/da3_demo_logs/` for debugging
-7. Clean shutdown with Ctrl+C
-
-**Requirements**: Ubuntu with gnome-terminal, ROS2 Humble/Jazzy installed in /opt/ros/
-
-**Troubleshooting**: If Terminal 1 crashes, check the log:
-```bash
-cat /tmp/da3_demo_logs/node_*.log
-```
-
-### TensorRT Demo (Jetson)
-
-For Jetson users, we provide a single-command demo script at the repo root that handles everything automatically:
-
-```bash
-# Clone directly on Jetson
 git clone https://github.com/GerdsenAI/Depth-Anything-3-ROS2-Wrapper.git ~/depth_anything_3_ros2
 cd ~/depth_anything_3_ros2
-
-# Run the demo (first run takes ~15-20 min for Docker build + TRT engine)
 ./run.sh
 ```
 
-The `run.sh` script will:
-1. **Build Docker image** if not already built (~15-20 minutes first run)
-2. **Download ONNX model** from HuggingFace and build TensorRT engine (~2 minutes)
-3. **Auto-detect cameras** (USB and CSI)
-4. **Start TRT inference service** on host for 40+ FPS performance
-5. **Launch Docker container** with ROS2 depth estimation node
+First run takes ~15-20 minutes (Docker build + TensorRT engine). Subsequent runs start in ~10 seconds.
 
-Subsequent runs start in ~10 seconds.
+**Options:**
+```bash
+./run.sh --camera /dev/video0   # Specify camera
+./run.sh --no-display           # Headless mode (SSH)
+./run.sh --rebuild              # Force rebuild Docker
+```
 
-### Demo Script Options
+### Option 2: Native ROS2 Installation
 
 ```bash
-./run.sh --help
-
-Options:
-  --camera DEVICE     Specify camera device (e.g., /dev/video0)
-  --no-display        Run in headless mode (for SSH)
-  --rebuild           Force rebuild Docker image
-```
-
-### RViz2 Visualization
-
-**Important**: RViz2 should be installed on the **Jetson host** (not inside Docker) for best performance:
-
-```bash
-# Install RViz2 on Jetson host
-sudo apt install ros-humble-rviz2
-
-# Source ROS2 environment
-source /opt/ros/humble/setup.bash
-
-# Launch RViz2 with pre-configured view
-rviz2 -d ~/depth_anything_3_ros2/rviz/depth_view.rviz
-```
-
-The demo script automatically launches RViz2 if it's installed on the host. If not installed, it will display instructions and continue without visualization.
-
-### Desktop Shortcuts
-
-For convenience, you can install desktop shortcuts on Jetson:
-
-```bash
-bash desktop/install_shortcuts.sh
-```
-
-This creates shortcuts for:
-- **Depth Anything V3 Demo** - Main demo launcher
-- **DA3 RViz2 Viewer** - RViz2 visualization only
-- **DA3 Performance Monitor** - Live performance metrics
-
-### Performance Monitor
-
-The performance monitor displays real-time metrics:
-
-```
-========================================
-  Depth Anything V3 - Performance
-========================================
-
-TensorRT Inference Service
-----------------------------------------
-  Status:     Running
-  FPS:        40.1
-  Latency:    25.0 ms
-  Frames:     1024
-
-GPU Resources
-----------------------------------------
-  GPU Usage:  45%
-  GPU Memory: 2048 / 15360 MB
-  GPU Temp:   52C
-```
-
-Run standalone: `bash scripts/performance_monitor.sh`
-
----
-
-## Configuration
-
-### Parameters
-
-All parameters can be configured via launch files or command line:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_name` | string | `depth-anything/DA3-BASE` | Hugging Face model ID or local path |
-| `device` | string | `cuda` | Inference device (`cuda` or `cpu`) |
-| `cache_dir` | string | `""` | Model cache directory (empty for default) |
-| `inference_height` | int | `518` | Height for inference (model input) |
-| `inference_width` | int | `518` | Width for inference (model input) |
-| `input_encoding` | string | `bgr8` | Expected input encoding (`bgr8` or `rgb8`) |
-| `normalize_depth` | bool | `true` | Normalize depth to [0, 1] range |
-| `publish_colored` | bool | `true` | Publish colorized depth visualization |
-| `publish_confidence` | bool | `true` | Publish confidence map |
-| `colormap` | string | `turbo` | Colormap for visualization |
-| `queue_size` | int | `1` | Subscriber queue size |
-| `log_inference_time` | bool | `false` | Log performance metrics |
-
-### Available Models
-
-| Model | Parameters | Use Case |
-|-------|------------|----------|
-| `depth-anything/DA3-SMALL` | 0.08B | Fast inference, lower accuracy |
-| `depth-anything/DA3-BASE` | 0.12B | Balanced performance (recommended) |
-| `depth-anything/DA3-LARGE` | 0.35B | Higher accuracy |
-| `depth-anything/DA3-GIANT` | 1.15B | Best accuracy, slower |
-| `depth-anything/DA3NESTED-GIANT-LARGE` | Combined | Metric scale reconstruction |
-
-### Topics
-
-#### Subscribed Topics
-- `~/image_raw` (sensor_msgs/Image): Input RGB image from camera
-- `~/camera_info` (sensor_msgs/CameraInfo): Optional camera intrinsics
-
-#### Published Topics
-- `~/depth` (sensor_msgs/Image): Depth map (32FC1 encoding)
-- `~/depth_colored` (sensor_msgs/Image): Colorized depth visualization (BGR8)
-- `~/confidence` (sensor_msgs/Image): Confidence map (32FC1)
-- `~/depth/camera_info` (sensor_msgs/CameraInfo): Camera info for depth image
-
----
-
-## Usage Examples
-
-### Example 1: Generic USB Camera (v4l2_camera)
-
-Complete example with a standard USB webcam:
-
-```bash
-# Install v4l2_camera if not already installed
-sudo apt install ros-humble-v4l2-camera
-
-# Launch everything together
-ros2 launch depth_anything_3_ros2 usb_camera_example.launch.py \
-  video_device:=/dev/video0 \
-  model_name:=depth-anything/DA3-BASE
-```
-
-### Example 2: ZED Stereo Camera
-
-Connect to a ZED camera (requires separate ZED ROS2 wrapper installation):
-
-```bash
-# Launch ZED camera separately
-ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zedxm
-
-# In another terminal, launch depth estimation with topic remapping
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  image_topic:=/zed/zed_node/rgb/image_rect_color \
-  camera_info_topic:=/zed/zed_node/rgb/camera_info
-```
-
-Or use the provided example:
-```bash
-ros2 launch depth_anything_3_ros2 zed_camera_example.launch.py \
-  camera_model:=zedxm
-```
-
-### Example 3: Intel RealSense Camera
-
-Connect to a RealSense camera (requires realsense-ros):
-
-```bash
-# Launch RealSense camera
-ros2 launch realsense2_camera rs_launch.py
-
-# Launch depth estimation
-ros2 launch depth_anything_3_ros2 realsense_example.launch.py
-```
-
-### Example 4: Multi-Camera Setup
-
-Run depth estimation on 4 cameras simultaneously:
-
-```bash
-# Launch multi-camera setup
-ros2 launch depth_anything_3_ros2 multi_camera.launch.py \
-  camera_namespaces:="cam1,cam2,cam3,cam4" \
-  image_topics:="/cam1/image_raw,/cam2/image_raw,/cam3/image_raw,/cam4/image_raw" \
-  model_name:=depth-anything/DA3-BASE
-```
-
-### Example 5: Testing with Static Images
-
-Test with a static image using image_publisher:
-
-```bash
-sudo apt install ros-humble-image-publisher
-
-ros2 launch depth_anything_3_ros2 image_publisher_test.launch.py \
-  image_path:=/path/to/test_image.jpg \
-  model_name:=depth-anything/DA3-BASE
-```
-
-### Example 6: Using Different Models
-
-Switch between models for different performance/accuracy tradeoffs:
-
-```bash
-# Fast inference (DA3-Small)
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  model_name:=depth-anything/DA3-SMALL \
-  image_topic:=/camera/image_raw
-
-# Best accuracy (DA3-Giant) - requires more GPU memory
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  model_name:=depth-anything/DA3-GIANT \
-  image_topic:=/camera/image_raw
-```
-
-### Example 7: CPU-Only Mode (Development/Testing Only)
-
-For development or testing on systems without CUDA. **Not recommended for production** - use TensorRT on Jetson for real-time performance:
-
-```bash
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  image_topic:=/camera/image_raw \
-  model_name:=depth-anything/DA3-BASE \
-  device:=cpu
-```
-
-> **Note**: CPU mode runs at ~1-2 FPS. For production deployment, use the TensorRT host-container architecture via `./run.sh`.
-
-### Example 8: Custom Configuration
-
-Use a custom parameter file:
-
-```bash
-# Create custom config file
-cat > my_config.yaml <<EOF
-depth_anything_3:
-  ros__parameters:
-    model_name: "depth-anything/DA3-LARGE"
-    device: "cuda"
-    normalize_depth: true
-    publish_colored: true
-    colormap: "viridis"
-    log_inference_time: true
-EOF
-
-# Launch with custom config
-ros2 run depth_anything_3_ros2 depth_anything_3_node --ros-args \
-  --params-file my_config.yaml \
-  -r ~/image_raw:=/camera/image_raw
-```
-
----
-
-## Docker Deployment
-
-Docker configuration files are provided for building and deploying on both CPU and GPU systems.
-
-> **Important**: No pre-built Docker images are published to Docker Hub or any container registry. You must build the images locally using `docker-compose build` or `docker-compose up` (which auto-builds).
-
-### Prerequisites
-
-Ensure your user can run Docker without `sudo`:
-
-```bash
-sudo usermod -aG docker $USER
-# Log out and back in, or run: newgrp docker
-# Verify: docker run hello-world
-```
-
-### Complete Docker Installation (3 Steps)
-
-```bash
-# Step 1: Clone the repository
+# Clone and install
 git clone https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper.git
 cd GerdsenAI-Depth-Anything-3-ROS2-Wrapper
-
-# Step 2: Build and run (choose GPU or CPU)
-docker-compose up -d depth-anything-3-gpu    # For GPU (requires nvidia-docker)
-# OR
-docker-compose up -d depth-anything-3-cpu    # For CPU-only
-
-# Step 3: Enter container and run the node
-docker exec -it da3_ros2_gpu bash            # For GPU container
-# OR
-docker exec -it da3_ros2_cpu bash            # For CPU container
-
-# Inside the container:
-ros2 run depth_anything_3_ros2 depth_anything_3_node --ros-args -p device:=cuda
-```
-
-### Quick Start with Docker Compose
-
-```bash
-# CPU-only mode
-docker-compose up -d depth-anything-3-cpu
-docker exec -it da3_ros2_cpu bash
-
-# GPU mode (requires nvidia-docker)
-docker-compose up -d depth-anything-3-gpu
-docker exec -it da3_ros2_gpu bash
-
-# Development mode (source mounted)
-docker-compose up -d depth-anything-3-dev
-```
-
-### Manual Docker Build
-
-```bash
-# Build GPU image
-docker build -t depth_anything_3_ros2:gpu \
-    --build-arg BUILD_TYPE=cuda-base \
-    .
+bash scripts/install_dependencies.sh
+source install/setup.bash
 
 # Run with USB camera
-docker run -it --rm \
-    --runtime=nvidia \
-    --gpus all \
-    --network host \
-    --privileged \
-    -v /dev:/dev:rw \
-    depth_anything_3_ros2:gpu
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
+  image_topic:=/camera/image_raw
 ```
 
-### Pre-configured Services
+See [Installation Guide](docs/INSTALLATION.md) for detailed steps.
 
-The docker-compose.yml includes:
-- `depth-anything-3-cpu`: CPU-only deployment
-- `depth-anything-3-gpu`: GPU-accelerated deployment
-- `depth-anything-3-dev`: Development environment
-- `depth-anything-3-usb-camera`: Standalone USB camera service
-
-### Docker Environment Variables
-
-Configure the container behavior using environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DA3_MODEL` | `depth-anything/DA3-BASE` | HuggingFace model ID to use |
-| `DA3_INFERENCE_HEIGHT` | `518` | Inference height (must be divisible by 14) |
-| `DA3_INFERENCE_WIDTH` | `518` | Inference width (must be divisible by 14) |
-| `DA3_VRAM_LIMIT_MB` | (auto) | Override detected VRAM for model selection |
-| `DA3_DEVICE` | `cuda` | Inference device (`cuda` or `cpu`) |
-
-Example usage:
+### Option 3: Docker (Desktop GPU)
 
 ```bash
-# Run with specific model and resolution
-docker run -it --rm \
-    --runtime=nvidia \
-    --gpus all \
-    -e DA3_MODEL=depth-anything/DA3-SMALL \
-    -e DA3_INFERENCE_HEIGHT=308 \
-    -e DA3_INFERENCE_WIDTH=308 \
-    depth_anything_3_ros2:gpu
-
-# Override VRAM detection for shared GPU systems
-docker run -it --rm \
-    --runtime=nvidia \
-    --gpus all \
-    -e DA3_VRAM_LIMIT_MB=4096 \
-    depth_anything_3_ros2:gpu
+docker-compose up -d depth-anything-3-gpu
+docker exec -it da3_ros2_gpu bash
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py image_topic:=/camera/image_raw
 ```
 
-In docker-compose.yml:
-
-```yaml
-services:
-  depth-anything-3-gpu:
-    environment:
-      - DA3_MODEL=depth-anything/DA3-SMALL
-      - DA3_INFERENCE_HEIGHT=308
-      - DA3_INFERENCE_WIDTH=308
-```
-
-### Docker Testing and Validation
-
-Automated test suite for validating Docker images:
-
-```bash
-cd docker
-chmod +x test_docker.sh
-./test_docker.sh
-```
-
-This comprehensive test suite validates:
-- Docker and Docker Compose installation
-- CPU and GPU image builds
-- ROS2 installation and package builds
-- Python dependencies
-- CUDA availability (GPU images)
-- Volume mounts and networking
-- Model download capability
-
-For detailed Docker documentation, see [docker/README.md](docker/README.md).
+See [Docker Guide](docker/README.md) for more options.
 
 ---
 
-## Example Images and Benchmarks
+## Architecture
 
-### Sample Test Images
+This project uses a **host-container split** for optimal Jetson performance:
 
-Download sample images for quick testing:
-
-```bash
-cd examples
-./scripts/download_samples.sh
+```
+HOST (JetPack 6.x)
++--------------------------------------------------+
+|  TRT Inference Service (trt_inference_shm.py)    |
+|  - TensorRT 10.3, ~15ms inference                |
++--------------------------------------------------+
+                    ^
+                    | /dev/shm/da3 (shared memory)
+                    v
++--------------------------------------------------+
+|  Docker Container (ROS2 Humble)                  |
+|  - Camera drivers, depth publisher               |
+|  - SharedMemoryInferenceFast (~8ms IPC)          |
++--------------------------------------------------+
 ```
 
-This downloads sample indoor, outdoor, and object images from public datasets.
+**Why**: Container TensorRT bindings are broken in current Jetson images. Host TensorRT 10.3 works perfectly.
 
-### Testing with Static Images
+---
 
-```bash
-# Test single image
-python3 examples/scripts/test_with_images.py \
-    --image examples/images/outdoor/street_01.jpg \
-    --model depth-anything/DA3-BASE \
-    --device cuda \
-    --output-dir results/
+## Platform Recommendations
 
-# Batch process directory
-python3 examples/scripts/test_with_images.py \
-    --input-dir examples/images/outdoor/ \
-    --output-dir results/ \
-    --model depth-anything/DA3-BASE
-```
+| Platform | Model | Resolution | Expected FPS | Memory |
+|----------|-------|------------|--------------|--------|
+| Orin Nano 4GB/8GB | DA3-Small | 308x308 | 40-50 | ~1.2GB |
+| Orin NX 8GB | DA3-Small | 308x308 | 50-55 | ~1.2GB |
+| **Orin NX 16GB** | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
+| AGX Orin 32GB/64GB | DA3-Base | 518x518 | 25-35 | ~2.5GB |
 
-### Performance Benchmarking
+See [Optimization Guide](OPTIMIZATION_GUIDE.md) for detailed benchmarks and tuning.
 
-Run comprehensive benchmarks across multiple models and image sizes:
+---
 
-```bash
-# Benchmark multiple models
-python3 examples/scripts/benchmark.py \
-    --images examples/images/ \
-    --models depth-anything/DA3-SMALL,depth-anything/DA3-BASE,depth-anything/DA3-LARGE \
-    --sizes 640x480,1280x720 \
-    --device cuda \
-    --output benchmark_results.json
-```
+## Topics
 
-Example output:
-```
-================================================================================
-BENCHMARK SUMMARY
-================================================================================
-Model                          Device   Size         FPS      Time (ms)    GPU Mem (MB)
---------------------------------------------------------------------------------
-depth-anything/DA3-SMALL       cuda     640x480      25.3     39.5         1512
-depth-anything/DA3-BASE        cuda     640x480      19.8     50.5         2489
-depth-anything/DA3-LARGE       cuda     640x480      11.7     85.4         3952
-================================================================================
-```
+### Subscribed
+| Topic | Type | Description |
+|-------|------|-------------|
+| `~/image_raw` | sensor_msgs/Image | Input RGB image |
 
-### Advanced Example Scripts
+### Published
+| Topic | Type | Description |
+|-------|------|-------------|
+| `~/depth` | sensor_msgs/Image | Depth map (32FC1) |
+| `~/depth_colored` | sensor_msgs/Image | Colorized visualization (BGR8) |
+| `~/confidence` | sensor_msgs/Image | Confidence map (32FC1) |
 
-#### Depth Post-Processing
+---
 
-Apply filtering, hole filling, and enhancement to depth maps:
+## Common Parameters
 
-```bash
-cd examples/scripts
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `model_name` | `depth-anything/DA3-BASE` | Model to use |
+| `device` | `cuda` | `cuda` or `cpu` |
+| `inference_height` | `518` | Input resolution height |
+| `inference_width` | `518` | Input resolution width |
+| `publish_colored` | `true` | Publish colorized depth |
 
-# Process single depth map
-python3 depth_postprocess.py \
-    --input depth.npy \
-    --output processed.npy \
-    --visualize
-
-# Batch process directory
-python3 depth_postprocess.py \
-    --input depth_dir/ \
-    --output processed_dir/ \
-    --batch
-```
-
-#### Multi-Camera Synchronization
-
-Synchronize depth estimation from multiple cameras:
-
-```bash
-# Terminal 1: Launch multi-camera setup
-ros2 launch depth_anything_3_ros2 multi_camera.launch.py \
-    camera_namespaces:=cam_left,cam_right \
-    image_topics:=/cam_left/image_raw,/cam_right/image_raw
-
-# Terminal 2: Run synchronizer
-python3 multi_camera_sync.py \
-    --cameras cam_left cam_right \
-    --sync-threshold 0.05 \
-    --output synchronized_depth/
-```
-
-#### TensorRT Optimization (Jetson)
-
-Optimize models for maximum performance on Jetson platforms:
-
-```bash
-# Optimize model
-python3 optimize_tensorrt.py \
-    --model depth-anything/DA3-BASE \
-    --output da3_base_trt.pth \
-    --precision fp16 \
-    --benchmark
-
-# Expected speedup: 2-3x faster inference
-```
-
-#### Performance Tuning
-
-Quantization, ONNX export, and profiling:
-
-```bash
-# INT8 quantization
-python3 performance_tuning.py quantize \
-    --model depth-anything/DA3-BASE \
-    --output da3_base_int8.pth
-
-# Export to ONNX
-python3 performance_tuning.py export-onnx \
-    --model depth-anything/DA3-BASE \
-    --output da3_base.onnx \
-    --benchmark
-
-# Profile layers
-python3 performance_tuning.py profile \
-    --model depth-anything/DA3-BASE \
-    --layers \
-    --memory
-```
-
-#### ROS2 Batch Processing
-
-Process ROS2 bags through depth estimation:
-
-```bash
-./ros2_batch_process.sh \
-    -i ./raw_bags \
-    -o ./depth_bags \
-    -m depth-anything/DA3-BASE \
-    -d cuda
-```
-
-#### Node Profiling
-
-Profile ROS2 node performance:
-
-```bash
-python3 profile_node.py \
-    --model depth-anything/DA3-BASE \
-    --device cuda \
-    --duration 60
-```
-
-For more examples, see [examples/README.md](examples/README.md).
+See [Configuration Reference](docs/CONFIGURATION.md) for all parameters.
 
 ---
 
 ## Documentation
 
-Complete documentation is available in multiple formats:
-
-### Sphinx Documentation
-
-Build and view the complete API documentation:
-
-```bash
-cd docs
-pip install -r requirements.txt
-make html
-open build/html/index.html  # or xdg-open on Linux
-```
-
-### Documentation Contents
-
-- **API Reference**: Complete API documentation with examples
-  - [DA3 Inference Module](docs/source/api/da3_inference.rst)
-  - [ROS2 Node Module](docs/source/api/depth_anything_3_node.rst)
-  - [Utilities Module](docs/source/api/utils.rst)
-
-- **User Guides**:
-  - Installation and setup
-  - Camera integration guide
-  - Multi-camera configuration
-  - Performance optimization
-  - Troubleshooting
-
-- **Tutorials**:
-  - [Quick Start Tutorial](docs/source/tutorials/quick_start.rst) - Get up and running in minutes
-  - [USB Camera Setup](docs/source/tutorials/usb_camera.rst) - Complete USB camera guide
-  - [Multi-Camera Setup](docs/source/tutorials/multi_camera.rst) - Synchronized multi-camera depth
-  - [Performance Tuning](docs/source/tutorials/performance_tuning.rst) - Optimization guide for all platforms
-
-### Additional Documentation
-
-- [Docker Deployment Guide](docker/README.md)
-- [Example Images Guide](examples/README.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
-- [Validation Checklist](VALIDATION_CHECKLIST.md)
+| Guide | Description |
+|-------|-------------|
+| [Installation](docs/INSTALLATION.md) | Detailed installation steps, offline setup |
+| [Usage Examples](docs/USAGE_EXAMPLES.md) | USB camera, ZED, RealSense, multi-camera |
+| [Configuration](docs/CONFIGURATION.md) | All parameters, topics, models |
+| [ROS2 Node Reference](docs/ROS2_NODE_REFERENCE.md) | Node lifecycle, QoS, Jetson performance tuning |
+| [Optimization](OPTIMIZATION_GUIDE.md) | Platform benchmarks, performance tuning |
+| [Jetson Deployment](docs/JETSON_DEPLOYMENT_GUIDE.md) | TensorRT setup, host-container split |
+| [Docker](docker/README.md) | Container deployment options |
+| [Troubleshooting](TROUBLESHOOTING.md) | Common issues and solutions |
 
 ---
 
-## Performance
+## Requirements
 
-### Production Performance (TensorRT)
-
-This project uses TensorRT as the production inference backend. The host-container architecture with shared memory IPC achieves:
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Real-World FPS** | **23+ FPS** | Limited by USB camera (~24 FPS input) |
-| Processing Capacity | 43+ FPS | Headroom for faster cameras |
-| TRT Inference | ~15ms | Host TensorRT 10.3 |
-| IPC Overhead | ~8ms | Shared memory (`/dev/shm/da3`) |
-| Total Frame Time | ~23ms | End-to-end latency |
-
-### PyTorch Baseline (Reference Only)
-
-PyTorch is NOT used for production. These numbers are provided as a baseline for comparison only:
-
-| Model | Backend | Resolution | FPS | Inference Time |
-|-------|---------|------------|-----|----------------|
-| DA3-SMALL | PyTorch FP32 | 518x518 | ~5.2 | ~193ms |
-
-TensorRT provides up to **17.8x speedup** over PyTorch (93 FPS @ 308x308 raw TRT vs 5.2 FPS PyTorch).
-
-### TensorRT Status: VALIDATED (Host-Container Split with Shared Memory IPC)
-
-TensorRT acceleration validated on Jetson Orin NX 16GB with **23+ FPS real-world performance** (43+ FPS processing capacity, limited by camera input).
-
-#### Architecture: Host-Container Split with Shared Memory
-
-Due to broken TensorRT Python bindings in available Jetson containers ([dusty-nv/jetson-containers#714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture with optimized shared memory IPC:
-
-```
-+----------------------------------------------------------+
-|                    HOST (JetPack 6.2+)                   |
-|  +----------------------------------------------------+  |
-|  |     TRT Inference Service (trt_inference_shm.py)   |  |
-|  |  - Loads engine with host TensorRT 10.3            |  |
-|  |  - RAM-backed IPC via /dev/shm/da3 (numpy.memmap)  |  |
-|  |  - ~15ms inference + ~8ms IPC = ~23ms total        |  |
-|  +----------------------------------------------------+  |
-|                          ^                               |
-|                          | /dev/shm/da3 (shared memory)  |
-|                          v                               |
-|  +----------------------------------------------------+  |
-|  |           Docker Container (L4T r36.4.0)           |  |
-|  |  - ROS2 Humble + PyTorch                           |  |
-|  |  - Subscribes /image_raw, publishes /depth         |  |
-|  |  - SharedMemoryInferenceFast for low-latency IPC   |  |
-|  +----------------------------------------------------+  |
-+----------------------------------------------------------+
-```
-
-**Why this approach:**
-- `dustynv/l4t-pytorch:r36.4.0` has broken TensorRT Python bindings
-- `dustynv/ros:humble-pytorch-l4t-r36.4.0` does not exist
-- Container TRT 8.6 cannot build DA3 engines (DINOv2 incompatibility)
-- Host TRT 10.3 works perfectly (validated at 15ms inference latency)
-- Shared memory IPC (`/dev/shm/da3`) reduces overhead from ~40ms to ~8ms
-
-#### Validated Performance (2026-02-04)
-
-| Metric | Value |
-|--------|-------|
-| Platform | Jetson Orin NX 16GB |
-| JetPack | 6.2 (L4T R36.4) |
-| TensorRT | 10.3.0.30 (host) |
-| CUDA | 12.6 |
-| IPC Method | Shared Memory (`/dev/shm/da3`) |
-
-**Real-World System Performance (with Shared Memory IPC):**
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Actual FPS** | **23+ FPS** | Limited by USB camera (~24 FPS input) |
-| Processing Capacity | 43+ FPS | Headroom for faster cameras |
-| TRT Inference | ~15ms | Host TensorRT 10.3 |
-| IPC Overhead | ~8ms | Shared memory (was ~40ms with file IPC) |
-| Total Frame Time | ~23ms | End-to-end latency |
-
-**Raw TensorRT Performance (benchmark, no IPC):**
-
-| Configuration | FPS | Latency | Speedup |
-|--------------|-----|---------|---------|
-| DA3-Small @ 518x518 FP16 | **40 FPS** | 25.0ms | 7.7x |
-| DA3-Small @ 400x400 FP16 | **64 FPS** | 15.8ms | 12.2x |
-| DA3-Small @ 308x308 FP16 | **93 FPS** | 10.9ms | 17.8x |
-| DA3-Small @ 256x256 FP16 | **110 FPS** | 9.1ms | 21.2x |
-
-Thermal stability validated: 10-minute sustained load with no throttling.
-
-#### Quick Start
-
-```bash
-cd ~/depth_anything_3_ros2
-./run.sh
-```
-
-This script:
-1. Builds Docker image if needed
-2. Downloads ONNX model if missing
-3. Builds TensorRT FP16 engine (~2 min)
-4. Starts host inference service
-5. Starts container with shared memory mount
-
-#### Key Files
-
-| File | Purpose |
-|------|--------|
-| `run.sh` | One-click demo launcher (repo root) |
-| `scripts/trt_inference_service_shm.py` | Host-side TRT inference service (shared memory) |
-| `depth_anything_3_ros2/da3_inference.py` | Inference wrapper with SharedMemoryInferenceFast |
-| `depth_anything_3_ros2/depth_anything_3_node.py` | ROS2 node with auto-detection of SHM service |
-
-See [docs/JETSON_DEPLOYMENT_GUIDE.md](docs/JETSON_DEPLOYMENT_GUIDE.md) for complete documentation.
-
-### Validated TensorRT Performance
-
-Measured on Jetson Orin NX 16GB with TensorRT 10.3 (2026-02-02):
-
-| Model | Backend | Resolution | FPS | Latency | Speedup |
-|-------|---------|------------|-----|---------|---------|
-| DA3-Small | TensorRT FP16 | 518x518 | **40.1** | 25.0ms | 7.7x |
-| DA3-Small | TensorRT FP16 | 400x400 | **63.6** | 15.8ms | 12.2x |
-| DA3-Small | TensorRT FP16 | 308x308 | **92.6** | 10.9ms | 17.8x |
-| DA3-Small | TensorRT FP16 | 256x256 | **110.2** | 9.1ms | 21.2x |
-| DA3-Base | TensorRT FP16 | 518x518 | **19.2** | 51.4ms | - |
-| DA3-Large | TensorRT FP16 | 518x518 | **7.5** | 132.2ms | - |
-| DA3-Small | PyTorch FP32 | 518x518 | ~5.2 | ~193ms | Baseline |
-
-See [docs/JETSON_BENCHMARKS.md](docs/JETSON_BENCHMARKS.md) for comprehensive benchmarks.
-
-### Optimization Tips (Current)
-
-1. **Use Smaller Models**: DA3-SMALL offers best speed with acceptable accuracy
-
-2. **Reduce Input Resolution**: Lower resolution images process faster
-```bash
---param inference_height:=308 inference_width:=308
-```
-
-3. **Queue Size**: Set to 1 to always process latest frame
-```bash
---param queue_size:=1
-```
-
-4. **Disable Unused Outputs**: Save processing time
-```bash
---param publish_colored_depth:=false
---param publish_confidence:=false
-```
-
-5. **Performance Profiling**: Profile to identify bottlenecks
-```bash
-python3 examples/scripts/profile_node.py --model depth-anything/DA3-BASE
-```
-
-For comprehensive optimization guide, see [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md).
+- **ROS2**: Humble Hawksbill (Ubuntu 22.04)
+- **Python**: 3.10+
+- **TensorRT**: 10.3+ (Jetson JetPack 6.x) for production
+- **CUDA**: 12.x (optional for desktop GPU)
 
 ---
 
-## Troubleshooting
+## Acknowledgments
 
-### Common Issues
+- **[Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3)** - ByteDance Seed Team ([paper](https://arxiv.org/abs/2511.10647))
+- **[NVIDIA TensorRT](https://developer.nvidia.com/tensorrt)** - High-performance inference
+- **[Jetson Containers](https://github.com/dusty-nv/jetson-containers)** - dusty-nv's L4T Docker images
+- **[Hugging Face](https://huggingface.co/depth-anything)** - Model hosting
 
-#### 1. Model Download Failures
-
-**Error**: `Failed to load model from Hugging Face Hub` or `Connection timeout`
-
-**Solutions**:
-- **Check internet connection**: `ping huggingface.co`
-- **Verify Hugging Face Hub is accessible**: May be blocked by firewall/proxy
-- **Pre-download models manually**:
-  ```bash
-  python3 -c "from transformers import AutoImageProcessor, AutoModelForDepthEstimation; \
-              AutoImageProcessor.from_pretrained('depth-anything/DA3-BASE'); \
-              AutoModelForDepthEstimation.from_pretrained('depth-anything/DA3-BASE')"
-  ```
-- **Use custom cache directory**: Set `HF_HOME=/path/to/models` environment variable
-- **For offline robots**: See [Offline Operation](#offline-operation-robots-without-internet) section
-
-#### 2. Model Not Found on Offline Robot
-
-**Error**: `Model depth-anything/DA3-BASE not found` on robot without internet
-
-**Solution**: Pre-download models and copy cache directory:
-```bash
-# On development machine WITH internet:
-python3 -c "from transformers import AutoModelForDepthEstimation; \
-            AutoModelForDepthEstimation.from_pretrained('depth-anything/DA3-BASE')"
-tar -czf da3_models.tar.gz -C ~/.cache/huggingface .
-
-# Transfer to robot (USB, SCP, etc.) and extract:
-ssh robot@robot-ip
-mkdir -p ~/.cache/huggingface
-tar -xzf da3_models.tar.gz -C ~/.cache/huggingface/
-```
-
-Verify models are available:
-```bash
-ls ~/.cache/huggingface/hub/models--depth-anything--*
-```
-
-#### 3. CUDA Out of Memory
-
-**Error**: `RuntimeError: CUDA out of memory`
-
-**Solutions**:
-- Use a smaller model (DA3-Small or DA3-Base)
-- Reduce input resolution
-- Close other GPU applications
-- Switch to CPU mode temporarily
-
-```bash
-# Use smaller model
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  model_name:=depth-anything/DA3-SMALL
-
-# Or use CPU
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  device:=cpu
-```
-
-#### 4. Image Encoding Mismatches
-
-**Error**: `CV Bridge conversion failed`
-
-**Solutions**:
-- Check camera's output encoding
-- Adjust `input_encoding` parameter
-
-```bash
-# For RGB cameras
---param input_encoding:=rgb8
-
-# For BGR cameras (most common)
---param input_encoding:=bgr8
-```
-
-#### 5. No Image Received
-
-**Solutions**:
-- Verify camera is publishing: `ros2 topic echo /camera/image_raw`
-- Check topic remapping is correct
-- Verify QoS settings match camera
-
-```bash
-# List available topics
-ros2 topic list | grep image
-
-# Check topic info
-ros2 topic info /camera/image_raw
-```
-
-#### 6. Low Frame Rate
-
-**Solutions**:
-- Check GPU utilization: `nvidia-smi`
-- Enable performance logging
-- Reduce image resolution
-- Use smaller model
-
-```bash
-# Enable performance logging
---param log_inference_time:=true
-```
-
-#### 7. Jetson Docker Build Failures
-
-**Error**: `dustynv/ros:humble-pytorch-l4t-r36.x.x` not found
-
-**Solution**: The humble-pytorch variant doesn't exist for L4T r36.x. Use `humble-desktop` instead:
-```dockerfile
-# In docker-compose.yml, set:
-L4T_VERSION: r36.4.0  # Uses humble-desktop variant
-```
-
-**Error**: `pip install` fails with connection errors to `jetson.webredirect.org`
-
-**Solution**: The dustynv base images configure pip to use an unreliable custom index. The Dockerfile includes `--index-url https://pypi.org/simple/` to override this.
-
-**Error**: `ImportError: libcudnn.so.8: cannot open shared object file`
-
-**Solution**: L4T r36.4.0 ships with cuDNN 9.x, but some PyTorch wheels expect cuDNN 8. For the host-container TRT architecture, the container doesn't need CUDA-accelerated PyTorch since TensorRT inference runs on the host. The Dockerfile uses CPU-only torchvision in the container.
-
----
-
-## Development
-
-### Running Tests
-
-```bash
-# Run all tests
-cd ~/ros2_ws
-colcon test --packages-select depth_anything_3_ros2
-
-# View test results
-colcon test-result --verbose
-
-# Run specific test
-python3 -m pytest src/depth_anything_3_ros2/test/test_inference.py -v
-```
-
-### Code Style
-
-This package follows:
-- PEP 8 for Python code
-- Google-style docstrings
-- Type hints for all functions
-- No emojis in code or documentation
-
-### Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Follow code style guidelines
-4. Add tests for new functionality
-5. Submit a pull request
+Inspired by [grupo-avispa/depth_anything_v2_ros2](https://github.com/grupo-avispa/depth_anything_v2_ros2) and [scepter914/DepthAnything-ROS](https://github.com/scepter914/DepthAnything-ROS).
 
 ---
 
 ## Citation
-
-If you use Depth Anything 3 in your research, please cite the original paper:
 
 ```bibtex
 @article{depthanything3,
@@ -1487,19 +192,25 @@ If you use Depth Anything 3 in your research, please cite the original paper:
 
 ## License
 
-This ROS2 wrapper is released under the MIT License.
+**This ROS2 wrapper**: MIT License
 
-The Depth Anything 3 model has its own license. Please refer to the [official repository](https://github.com/ByteDance-Seed/Depth-Anything-3) for model license information.
+**Depth Anything 3 models**:
+- DA3-Small: Apache-2.0 (commercial use OK)
+- DA3-Base/Large/Giant: CC-BY-NC-4.0 (non-commercial only)
+
+---
+
+## Contributing
+
+Contributions welcome! We especially need help with **test coverage** for the SharedMemory/TensorRT production code paths. See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Current test coverage status
+- Priority areas needing tests
+- How to write and run tests
 
 ---
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper/discussions)
-- **ROS2 Documentation**: [ROS2 Humble Docs](https://docs.ros.org/en/humble/)
-- **Depth Anything 3**: [Official Repository](https://github.com/ByteDance-Seed/Depth-Anything-3)
-
----
-
-**Note**: This is an unofficial ROS2 wrapper. For the official Depth Anything 3 implementation, please visit the [ByteDance-Seed repository](https://github.com/ByteDance-Seed/Depth-Anything-3).
+- [GitHub Issues](https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper/issues)
+- [GitHub Discussions](https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper/discussions)
+- [Troubleshooting Guide](TROUBLESHOOTING.md)
