@@ -125,7 +125,7 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ---
 
-## Phase 5: Live Demo System [IN PROGRESS]
+## Phase 5: Live Demo System [COMPLETE]
 
 ### Components Added
 - [x] `scripts/demo_depth_viewer.py` - ROS2 viewer with side-by-side camera + depth display
@@ -133,6 +133,7 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 - [x] `scripts/jetson_demo.sh` - Jetson-specific entrypoint for systems with local display
 - [x] Atomic IO for numpy files (prevents partial reads)
 - [x] Dockerfile ROS2 sourcing fix for non-interactive shells
+- [x] One-click demo via `./run.sh` at repo root
 
 ### Demo Features
 - Side-by-side camera feed and colorized TensorRT depth
@@ -142,16 +143,23 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ### Usage
 ```bash
-# On Jetson with display
-bash scripts/jetson_demo.sh
+# One-click demo (recommended)
+./run.sh
 
-# General demo (container)
-bash scripts/run_demo.sh
+# Or individual scripts
+bash scripts/jetson_demo.sh      # Jetson with display
+bash scripts/run_demo.sh         # General demo (container)
 ```
-
-### Pending
-- [ ] Merge TensorRT-Testing branch to main (PR pending)
 
 ---
 
-**Last Updated:** 2026-02-03
+## Phase 6: Production Cleanup [COMPLETE]
+
+- [x] Migrated to shared memory IPC (`/dev/shm/da3`) - ~8ms vs ~40ms file IPC
+- [x] Removed deprecated `*_optimized.py` files (replaced by host-container architecture)
+- [x] Updated all documentation for TensorRT production architecture
+- [x] Validated 23+ FPS real-world (43+ FPS processing capacity)
+
+---
+
+**Last Updated:** 2026-02-05
