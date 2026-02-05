@@ -169,9 +169,45 @@ fi
 # Check Python TensorRT bindings
 if [ "$USE_TRT" = true ]; then
     if ! python3 -c "import tensorrt" 2>/dev/null; then
-        echo -e "${YELLOW}WARNING: TensorRT Python bindings not installed${NC}"
-        echo "         Will use PyTorch backend (~5 FPS instead of ~40 FPS)"
-        USE_TRT=false
+        echo -e "${YELLOW}TensorRT Python bindings not found, attempting install...${NC}"
+
+        # Try pip install first (works on JetPack 6.x)
+        if pip3 install --quiet tensorrt 2>/dev/null; then
+            if python3 -c "import tensorrt" 2>/dev/null; then
+                echo -e "       ${GREEN}TensorRT bindings installed via pip${NC}"
+            else
+                USE_TRT=false
+            fi
+        # Try apt install as fallback
+        elif sudo apt-get install -y python3-tensorrt 2>/dev/null; then
+            if python3 -c "import tensorrt" 2>/dev/null; then
+                echo -e "       ${GREEN}TensorRT bindings installed via apt${NC}"
+            else
+                USE_TRT=false
+            fi
+        else
+            USE_TRT=false
+        fi
+
+        if [ "$USE_TRT" = false ]; then
+            echo -e "${YELLOW}WARNING: Could not install TensorRT Python bindings${NC}"
+            echo "         Manual install: pip3 install tensorrt --break-system-packages"
+            echo "         Will use PyTorch backend (~5 FPS instead of ~40 FPS)"
+        fi
+    fi
+fi
+
+# Check pycuda (required for TRT service)
+if [ "$USE_TRT" = true ]; then
+    if ! python3 -c "import pycuda.driver" 2>/dev/null; then
+        echo -e "${YELLOW}pycuda not found, installing...${NC}"
+        if pip3 install pycuda --break-system-packages 2>/dev/null || pip3 install pycuda 2>/dev/null; then
+            echo -e "       ${GREEN}pycuda installed${NC}"
+        else
+            echo -e "${YELLOW}WARNING: Could not install pycuda${NC}"
+            echo "         Manual install: pip3 install pycuda --break-system-packages"
+            USE_TRT=false
+        fi
     fi
 fi
 
@@ -288,9 +324,6 @@ if [ "$USE_TRT" = true ]; then
     mkdir -p "$SHARED_DIR"
     chmod 777 "$SHARED_DIR"
     rm -f "$SHARED_DIR"/* 2>/dev/null || true
-
-    # Install pycuda if needed
-    python3 -c "import pycuda.driver" 2>/dev/null || pip3 install -q pycuda
 
     python3 scripts/trt_inference_service_shm.py \
         --engine "$TRT_ENGINE" \

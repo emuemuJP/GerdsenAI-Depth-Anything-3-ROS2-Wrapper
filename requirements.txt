@@ -28,6 +28,9 @@ pyyaml>=6.0
 # Vision transformer backbone
 timm>=0.9.0
 
+# Rendering (required by DA3)
+gsplat>=1.0.0
+
 # Depth Anything 3 (install from source)
 # Install with: pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
 
