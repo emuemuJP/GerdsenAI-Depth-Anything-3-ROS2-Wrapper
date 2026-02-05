@@ -84,7 +84,9 @@ Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3):
 
 ## Quick Start
 
-### Option 1: PyTorch FP32 (Baseline) - ~5 FPS
+### Option 1: PyTorch FP32 (Development/Baseline Only) - ~5 FPS
+
+**WARNING: NOT for production use.** PyTorch mode is provided only for development testing and as a performance baseline. For production deployment, use Option 2 (TensorRT).
 
 Works out of the box, no TensorRT engine build required:
 
