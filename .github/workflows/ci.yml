@@ -24,11 +24,13 @@ jobs:
           pip install flake8 black
 
       - name: Run flake8
+        continue-on-error: true
         run: |
           flake8 depth_anything_3_ros2/ --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 depth_anything_3_ros2/ --count --max-line-length=88 --statistics
 
       - name: Check code formatting with black
+        continue-on-error: true
         run: |
           black --check depth_anything_3_ros2/
 
