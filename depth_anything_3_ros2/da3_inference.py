@@ -1,12 +1,20 @@
 """
 Depth Anything 3 Inference Wrapper.
 
-This module provides a wrapper around the Depth Anything 3 model for efficient
-depth estimation with CUDA support and CPU fallback.
+This module provides inference backends for Depth Anything 3 depth estimation.
 
-Supports multiple backends:
-- PyTorch: Default, runs on GPU/CPU
-- SharedMemory: Communicates with host TensorRT service for TRT 10.3 inference
+PRODUCTION BACKEND (Recommended):
+- SharedMemoryInferenceFast: Communicates with host TensorRT 10.3 service via /dev/shm
+  - ~15ms inference + ~8ms IPC = ~23ms total frame time
+  - 23+ FPS real-world (camera-limited), 43+ FPS processing capacity
+  - Requires: Host running trt_inference_service_shm.py
+
+FALLBACK/DEVELOPMENT BACKENDS:
+- SharedMemoryInference: File-based IPC with host TRT service (slower, ~40ms IPC)
+- DA3InferenceWrapper: PyTorch backend for development/testing only (~5 FPS)
+
+For production deployment on Jetson, use ./run.sh which automatically starts
+the TRT service and configures shared memory IPC.
 """
 
 import logging
@@ -27,6 +35,17 @@ INPUT_PATH = SHARED_DIR / "input.npy"
 OUTPUT_PATH = SHARED_DIR / "output.npy"
 STATUS_PATH = SHARED_DIR / "status"
 REQUEST_PATH = SHARED_DIR / "request"
+
+# Fast shared memory paths (using /dev/shm for RAM-backed storage)
+SHM_DIR = Path("/dev/shm/da3")
+INPUT_SHM = SHM_DIR / "input.bin"
+OUTPUT_SHM = SHM_DIR / "output.bin"
+STATUS_SHM = SHM_DIR / "status"
+REQUEST_SHM = SHM_DIR / "request"
+
+# Fixed shapes for DA3-small @ 518x518
+INPUT_SHAPE = (1, 1, 3, 518, 518)
+OUTPUT_SHAPE = (1, 518, 518)
 
 
 class SharedMemoryInference:
@@ -244,13 +263,186 @@ class SharedMemoryInference:
         pass
 
 
+class SharedMemoryInferenceFast:
+    """
+    Fast shared memory inference using numpy.memmap on /dev/shm.
+
+    This eliminates file I/O overhead by using RAM-backed memory mapping.
+    Expected latency reduction: 15-25ms compared to file-based IPC.
+
+    Requires the host to run trt_inference_service_shm.py instead of
+    trt_inference_service.py.
+    """
+
+    def __init__(
+        self,
+        timeout: float = 0.5,
+        fallback_wrapper: Optional["DA3InferenceWrapper"] = None,
+    ):
+        self.timeout = timeout
+        self.fallback_wrapper = fallback_wrapper
+        self._service_available = False
+        self._last_check = 0
+        self._check_interval = 5.0
+        self._input_mmap = None
+        self._output_mmap = None
+
+        self._init_shared_memory()
+
+    def _init_shared_memory(self):
+        """Initialize memory-mapped arrays."""
+        if not SHM_DIR.exists():
+            logger.warning(f"SHM directory {SHM_DIR} does not exist")
+            return
+
+        try:
+            if INPUT_SHM.exists():
+                self._input_mmap = np.memmap(
+                    INPUT_SHM, dtype=np.float32, mode='r+', shape=INPUT_SHAPE
+                )
+            if OUTPUT_SHM.exists():
+                self._output_mmap = np.memmap(
+                    OUTPUT_SHM, dtype=np.float32, mode='r', shape=OUTPUT_SHAPE
+                )
+            logger.info("Fast shared memory initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize shared memory: {e}")
+
+    def _check_service(self) -> bool:
+        """Check if host TRT service is available."""
+        now = time.time()
+        if now - self._last_check < self._check_interval:
+            return self._service_available
+
+        self._last_check = now
+
+        if STATUS_SHM.exists():
+            status = STATUS_SHM.read_text().strip()
+            self._service_available = status.startswith(
+                "ready"
+            ) or status.startswith("complete")
+            if self._service_available and self._input_mmap is None:
+                self._init_shared_memory()
+        else:
+            self._service_available = False
+
+        return self._service_available
+
+    def inference(
+        self,
+        image: np.ndarray,
+        return_confidence: bool = True,
+        return_camera_params: bool = False,
+    ) -> Dict[str, np.ndarray]:
+        """Run inference via fast shared memory."""
+        if not self._check_service() or self._input_mmap is None:
+            if self.fallback_wrapper:
+                return self.fallback_wrapper.inference(
+                    image, return_confidence, return_camera_params
+                )
+            raise RuntimeError("Fast SHM service not available")
+
+        try:
+            return self._inference_via_memmap(image)
+        except Exception as e:
+            logger.warning(f"Fast SHM inference failed: {e}")
+            if self.fallback_wrapper:
+                return self.fallback_wrapper.inference(
+                    image, return_confidence, return_camera_params
+                )
+            raise
+
+    def _inference_via_memmap(self, image: np.ndarray) -> Dict[str, np.ndarray]:
+        """Perform inference via memory-mapped shared memory."""
+        # Preprocess image
+        input_tensor = self._preprocess_image(image)
+
+        # Write directly to memory map (no file I/O!)
+        self._input_mmap[:] = input_tensor
+        self._input_mmap.flush()
+
+        # Signal request
+        REQUEST_SHM.write_text(str(time.time()))
+
+        # Wait for completion
+        start_time = time.time()
+        while time.time() - start_time < self.timeout:
+            if STATUS_SHM.exists():
+                status = STATUS_SHM.read_text().strip()
+                if status.startswith("complete"):
+                    break
+                elif status.startswith("error"):
+                    raise RuntimeError(f"SHM service error: {status}")
+            time.sleep(0.0005)  # 0.5ms poll
+        else:
+            raise TimeoutError(f"SHM inference timeout after {self.timeout}s")
+
+        # CRITICAL: Re-open memmap to ensure we get fresh data after TRT write
+        # This prevents reading stale cached data that causes color flickering
+        self._output_mmap = np.memmap(
+            OUTPUT_SHM, dtype=np.float32, mode='r', shape=OUTPUT_SHAPE
+        )
+
+        # Small sync delay to ensure TRT service has finished flushing
+        time.sleep(0.001)  # 1ms sync delay
+
+        # Read directly from memory map (no file I/O!)
+        depth = np.array(self._output_mmap)
+
+        while depth.ndim > 2:
+            depth = depth[0]
+
+        return {"depth": depth.astype(np.float32)}
+
+    def _preprocess_image(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess image for TensorRT inference."""
+        import cv2
+
+        target_size = (518, 518)
+
+        if image.shape[:2] != target_size:
+            image = cv2.resize(image, target_size, interpolation=cv2.INTER_LINEAR)
+
+        tensor = image.astype(np.float32) / 255.0
+
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        tensor = (tensor - mean) / std
+
+        tensor = tensor.transpose(2, 0, 1)
+        tensor = tensor[np.newaxis, np.newaxis, ...]
+
+        return tensor.astype(np.float32)
+
+    @property
+    def is_service_available(self) -> bool:
+        """Check if fast SHM service is available."""
+        return self._check_service()
+
+    def get_gpu_memory_usage(self) -> Optional[Dict[str, float]]:
+        """GPU memory managed by host service."""
+        return None
+
+    def clear_cache(self) -> None:
+        """No-op for shared memory inference."""
+        pass
+
+
 class DA3InferenceWrapper:
     """
-    Wrapper class for Depth Anything 3 model inference.
+    PyTorch wrapper for Depth Anything 3 model inference.
+
+    WARNING: This backend is for DEVELOPMENT/TESTING ONLY.
+    For production deployment, use SharedMemoryInferenceFast with the host
+    TensorRT service (./run.sh) which provides 8-10x better performance.
 
     This class handles model loading from Hugging Face Hub, inference execution,
     and provides utilities for depth map processing with proper error handling
     and resource management.
+
+    Performance comparison (Jetson Orin NX 16GB):
+    - PyTorch (this class): ~5 FPS, ~193ms latency
+    - TensorRT (production): 23+ FPS, ~23ms latency
     """
 
     def __init__(

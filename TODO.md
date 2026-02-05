@@ -45,13 +45,18 @@ HOST (TRT 10.3)                    CONTAINER (ROS2)
 - [x] `depth_anything_3_ros2/da3_inference.py` - SharedMemoryInference class with PyTorch fallback
 - [x] `scripts/deploy_jetson.sh --host-trt` - Orchestrates host service + container startup
 
-### Communication Protocol
+### Communication Protocol (Shared Memory - Current)
+
+Uses `/dev/shm/da3` for RAM-backed memory mapping with ~8ms IPC overhead:
+
 | File | Direction | Format |
 |------|-----------|--------|
-| `/tmp/da3_shared/input.npy` | Container -> Host | float32 [1,1,3,518,518] |
-| `/tmp/da3_shared/output.npy` | Host -> Container | float32 [1,518,518] |
-| `/tmp/da3_shared/request` | Container -> Host | Timestamp signal |
-| `/tmp/da3_shared/status` | Host -> Container | "ready", "complete:time", "error:msg" |
+| `/dev/shm/da3/input.bin` | Container -> Host | float32 memmap [1,1,3,518,518] |
+| `/dev/shm/da3/output.bin` | Host -> Container | float32 memmap [1,518,518] |
+| `/dev/shm/da3/request` | Container -> Host | Timestamp signal |
+| `/dev/shm/da3/status` | Host -> Container | "ready", "complete:time", "error:msg" |
+
+**Note:** File-based IPC (`/tmp/da3_shared`) is deprecated. Use `trt_inference_service_shm.py` for production.
 
 ### Deployment
 ```bash
@@ -120,7 +125,7 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ---
 
-## Phase 5: Live Demo System [IN PROGRESS]
+## Phase 5: Live Demo System [COMPLETE]
 
 ### Components Added
 - [x] `scripts/demo_depth_viewer.py` - ROS2 viewer with side-by-side camera + depth display
@@ -128,6 +133,7 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 - [x] `scripts/jetson_demo.sh` - Jetson-specific entrypoint for systems with local display
 - [x] Atomic IO for numpy files (prevents partial reads)
 - [x] Dockerfile ROS2 sourcing fix for non-interactive shells
+- [x] One-click demo via `./run.sh` at repo root
 
 ### Demo Features
 - Side-by-side camera feed and colorized TensorRT depth
@@ -137,16 +143,23 @@ See `docs/JETSON_BENCHMARKS.md` for full benchmark documentation.
 
 ### Usage
 ```bash
-# On Jetson with display
-bash scripts/jetson_demo.sh
+# One-click demo (recommended)
+./run.sh
 
-# General demo (container)
-bash scripts/run_demo.sh
+# Or individual scripts
+bash scripts/jetson_demo.sh      # Jetson with display
+bash scripts/run_demo.sh         # General demo (container)
 ```
-
-### Pending
-- [ ] Merge TensorRT-Testing branch to main (PR pending)
 
 ---
 
-**Last Updated:** 2026-02-03
+## Phase 6: Production Cleanup [COMPLETE]
+
+- [x] Migrated to shared memory IPC (`/dev/shm/da3`) - ~8ms vs ~40ms file IPC
+- [x] Removed deprecated `*_optimized.py` files (replaced by host-container architecture)
+- [x] Updated all documentation for TensorRT production architecture
+- [x] Validated 23+ FPS real-world (43+ FPS processing capacity)
+
+---
+
+**Last Updated:** 2026-02-05

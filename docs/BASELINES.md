@@ -11,7 +11,9 @@ This document records measured performance baselines for the Depth Anything 3 RO
 **TensorRT**: 10.3.0.30
 **CUDA**: 12.6
 
-### TensorRT FP16 Performance
+### TensorRT FP16 Performance (Raw Inference, No Camera/IPC Limits)
+
+> **Note**: These are raw TensorRT benchmark numbers measured with `trtexec`. Real-world system performance depends on camera input rate and IPC method. With shared memory IPC (`/dev/shm`), expect ~23ms total frame time (43+ FPS processing capacity).
 
 #### Resolution Benchmarks (DA3-Small)
 

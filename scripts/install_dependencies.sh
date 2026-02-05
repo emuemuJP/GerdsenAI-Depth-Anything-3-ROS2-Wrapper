@@ -77,13 +77,15 @@ done
 # Install Python dependencies
 log_info "Installing Python dependencies..."
 PYTHON_PACKAGES=(
-    "numpy>=1.24.0"
+    "numpy>=1.24.0,<2.0"
     "opencv-python>=4.8.0"
     "pillow>=10.0.0"
     "transformers>=4.35.0"
     "huggingface-hub>=0.19.0"
     "timm>=0.9.0"
     "safetensors>=0.4.0"
+    "pyyaml>=6.0"
+    "gsplat>=1.0.0"
 )
 
 # Check if we're on Jetson (ARM64)
@@ -218,6 +220,63 @@ except:
         else
             log_error "  PyTorch installed but CUDA still not available"
             log_error "  This may indicate a JetPack/CUDA version mismatch"
+        fi
+    fi
+
+    # =========================================
+    # TensorRT Host Dependencies (for TRT inference service)
+    # =========================================
+    log_info "Installing TensorRT host dependencies..."
+
+    # Check TensorRT availability
+    if [ -f "/usr/src/tensorrt/bin/trtexec" ]; then
+        TRT_VERSION=$(/usr/src/tensorrt/bin/trtexec --version 2>/dev/null | head -1 || echo "unknown")
+        log_info "  [OK] TensorRT found: $TRT_VERSION"
+    else
+        log_warn "  trtexec not found - TensorRT may not be installed"
+        log_warn "  TensorRT comes with JetPack. Ensure JetPack is properly installed."
+    fi
+
+    # Install TensorRT Python bindings
+    if python3 -c "import tensorrt" 2>/dev/null; then
+        TRT_PY_VER=$(python3 -c "import tensorrt; print(tensorrt.__version__)" 2>/dev/null || echo "unknown")
+        log_info "  [OK] TensorRT Python bindings: $TRT_PY_VER"
+    else
+        log_info "  Installing TensorRT Python bindings..."
+        if pip3 install tensorrt --break-system-packages 2>/dev/null || pip3 install tensorrt 2>/dev/null; then
+            log_info "  [OK] TensorRT Python bindings installed via pip"
+        elif sudo apt-get install -y python3-tensorrt 2>/dev/null; then
+            log_info "  [OK] TensorRT Python bindings installed via apt"
+        else
+            log_warn "  Could not install TensorRT Python bindings"
+            log_warn "  Manual install: pip3 install tensorrt --break-system-packages"
+        fi
+    fi
+
+    # Install pycuda (required for TRT inference service)
+    if python3 -c "import pycuda.driver" 2>/dev/null; then
+        PYCUDA_VER=$(python3 -c "import pycuda; print(pycuda.VERSION_TEXT)" 2>/dev/null || echo "unknown")
+        log_info "  [OK] pycuda: $PYCUDA_VER"
+    else
+        log_info "  Installing pycuda..."
+        if pip3 install pycuda --break-system-packages 2>/dev/null || pip3 install pycuda 2>/dev/null; then
+            log_info "  [OK] pycuda installed"
+        else
+            log_warn "  Could not install pycuda"
+            log_warn "  Manual install: pip3 install pycuda --break-system-packages"
+        fi
+    fi
+
+    # Install onnx (required for TRT engine building)
+    if python3 -c "import onnx" 2>/dev/null; then
+        ONNX_VER=$(python3 -c "import onnx; print(onnx.__version__)" 2>/dev/null || echo "unknown")
+        log_info "  [OK] onnx: $ONNX_VER"
+    else
+        log_info "  Installing onnx..."
+        if pip3 install onnx --break-system-packages 2>/dev/null || pip3 install onnx 2>/dev/null; then
+            log_info "  [OK] onnx installed"
+        else
+            log_warn "  Could not install onnx (needed for TRT engine building)"
         fi
     fi
 else

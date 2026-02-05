@@ -362,17 +362,17 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw
 ```
 
-### Architecture (Host-Container Split)
+### Architecture (Host-Container Split with Shared Memory IPC)
 
 ```
-[Container: ROS2 Node] <-- /tmp/da3_shared --> [Host: TRT Service]
+[Container: ROS2 Node] <-- /dev/shm/da3 --> [Host: TRT Service]
       |                                              |
       v                                              v
 /image_raw (sub)                           TRT 10.3 engine
-/depth (pub)                               ~35 FPS inference
+/depth (pub)                               ~15ms inference + ~8ms IPC
 ```
 
-The container writes preprocessed images to shared memory, the host TRT service processes them, and writes depth maps back. This avoids TensorRT version mismatch issues (container base image has TRT 8.6, host has TRT 10.3).
+The container uses `SharedMemoryInferenceFast` to communicate with the host `trt_inference_service_shm.py` via RAM-backed shared memory (`/dev/shm/da3`). This achieves **23+ FPS real-world** (43+ FPS processing capacity) vs ~11 FPS with the old file-based IPC.
 
 ### Container-Only Mode (Fallback)
 
@@ -412,7 +412,7 @@ scp -r . user@jetson-ip:~/depth_anything_3_ros2/
 
 | Component | Requirement | Notes |
 |-----------|-------------|-------|
-| **Base Image** | `dustynv/ros:humble-pytorch-l4t-r36.2.0` | No NGC auth required |
+| **Base Image** | `dustynv/ros:humble-desktop-l4t-r36.4.0` | No NGC auth required |
 | **torchvision** | Build from source | NVIDIA wheel ABI mismatch |
 | **cv_bridge** | Build from source | OpenCV version conflict |
 | **pycolmap/evo** | Runtime patched | No ARM64 wheels |
@@ -421,19 +421,19 @@ scp -r . user@jetson-ip:~/depth_anything_3_ros2/
 
 ### Validated Performance
 
-Measured on Jetson Orin NX 16GB (2026-01-31):
+Measured on Jetson Orin NX 16GB (2026-02-05):
 
-| Backend | Model | Resolution | FPS | GPU Latency | Speedup | Status |
-|---------|-------|------------|-----|-------------|---------|--------|
-| PyTorch FP32 | DA3-SMALL | 518x518 | 5.2 | ~193ms | Baseline | Functional |
-| TensorRT FP16 | DA3-SMALL | 518x518 | 35.3 | 26.4ms median | 6.8x | Validated |
+| Backend | Model | Resolution | FPS | Latency | Notes |
+|---------|-------|------------|-----|---------|-------|
+| PyTorch FP32 | DA3-SMALL | 518x518 | ~5 | ~193ms | Baseline (not for production) |
+| TensorRT FP16 + SHM IPC | DA3-SMALL | 518x518 | **23+ / 43+** | ~23ms | Real-world / capacity |
 
-**TensorRT Validation Details:**
+**TensorRT with Shared Memory IPC Details:**
 - Platform: Jetson Orin NX 16GB (JetPack 6.2, L4T r36.4.0)
-- TensorRT: 10.3 (host)
-- Engine size: 58MB
-- Input shape: 1x1x3x518x518 (5D tensor)
-- Architecture: Host-container split
+- TensorRT: 10.3 (host), `trt_inference_service_shm.py`
+- IPC: `/dev/shm/da3` (RAM-backed, ~8ms overhead)
+- Total latency: ~15ms inference + ~8ms IPC = ~23ms
+- Real-world FPS limited by USB camera (~24 FPS input)
 
 ### Deploy Script Options
 

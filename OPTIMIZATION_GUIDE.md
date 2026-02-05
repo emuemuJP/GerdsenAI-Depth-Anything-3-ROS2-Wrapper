@@ -1,12 +1,45 @@
-# Optimization Guide: Achieving >30 FPS on Jetson Orin AGX
+# Optimization Guide: Achieving >30 FPS on Jetson
 
-This guide explains how to achieve >30 FPS performance with 1080p depth and confidence outputs on NVIDIA Jetson Orin AGX 64GB.
+This guide explains how to achieve optimal performance with Depth Anything 3 on NVIDIA Jetson platforms.
 
 ---
 
-## TensorRT Status (2026-01-31)
+## Quick Reference by Platform
 
-**TensorRT acceleration validated on Jetson Orin NX 16GB.**
+Use this table to find the recommended configuration for your Jetson:
+
+| Platform | VRAM | Recommended Model | Resolution | Expected FPS | Memory Usage |
+|----------|------|-------------------|------------|--------------|--------------|
+| **Orin Nano 4GB** | 4GB shared | DA3-Small | 308x308 | 40-45 | ~1.2GB |
+| **Orin Nano 8GB** | 8GB shared | DA3-Small | 308x308 | 45-50 | ~1.2GB |
+| **Orin NX 8GB** | 8GB shared | DA3-Small | 308x308 | 50-55 | ~1.2GB |
+| **Jetson Orin NX 16GB**\* | 16GB shared | DA3-Small | 518x518 | **43+ (validated)** | ~1.8GB |
+| **AGX Orin 32GB** | 32GB shared | DA3-Base | 518x518 | 25-35 | ~2.5GB |
+| **AGX Orin 64GB** | 64GB shared | DA3-Base/Large | 518x518 | 20-35 | ~2.5-4GB |
+| **Xavier NX** | 8GB shared | DA3-Small | 308x308 | 15-25* | ~1.2GB |
+
+*Xavier NX requires JetPack 5.x with TensorRT 8.5+ (limited DA3 support)
+
+\*Validated on [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)
+
+**Key Notes:**
+- FPS values are TensorRT processing capacity. Real-world FPS may be limited by camera input rate (~24 FPS for USB cameras)
+- Use `./run.sh` for one-click deployment with automatic configuration
+- All platforms use FP16 precision for optimal speed/accuracy balance
+
+### Model Selection Guide
+
+| Model | Parameters | Best For | Min VRAM |
+|-------|------------|----------|----------|
+| **DA3-Small** | ~24M | Real-time robotics, obstacle avoidance | 4GB |
+| **DA3-Base** | ~97M | Balanced quality/speed, general use | 8GB |
+| **DA3-Large** | ~335M | High-quality depth, slower inference | 16GB |
+
+---
+
+## TensorRT Status (2026-02-05)
+
+**TensorRT acceleration validated on Jetson Orin NX 16GB ([Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html)).**
 
 | Component | Previous (L4T r36.2.0) | Current (L4T r36.4.0) |
 |-----------|------------------------|----------------------|
@@ -35,18 +68,23 @@ DA3_TENSORRT_AUTO=true docker compose up depth-anything-3-jetson
 
 ---
 
-## Current Architecture Limitation (2026-02-04)
+## Current Architecture (2026-02-04) - Optimized
 
-**Host-Container File IPC** limits throughput to 10-15 FPS due to numpy file read/write overhead.
+**Shared Memory IPC** (`/dev/shm/da3`) achieves 23+ FPS, limited only by camera input rate.
 
 | Architecture | TRT Inference | IPC Overhead | Total | FPS |
 |--------------|---------------|--------------|-------|-----|
 | Native (target) | ~26ms | 0ms | ~26ms | ~38 |
-| Host-Container File IPC (current) | ~50ms | ~40ms | ~90ms | ~11 |
+| Host-Container File IPC (old) | ~50ms | ~40ms | ~90ms | ~11 |
+| **Host-Container Shared Memory (current)** | **~15ms** | **~8ms** | **~23ms** | **43+ capacity** |
 
-**Current Bottleneck:** TensorRT runs on host, ROS2 in container. Communication via `/tmp/da3_shared/` files (input.npy, output.npy) adds ~40ms per frame.
+**Optimization Complete:** TensorRT runs on host, ROS2 in container. Communication via `/dev/shm/da3/` using numpy.memmap reduces IPC overhead to ~8ms. Processing capacity is 43+ FPS; actual output limited by camera input (~24 FPS).
 
-**To achieve 30+ FPS:** Run TensorRT natively inside container (requires working TensorRT Python bindings in L4T r36.4.0 containers).
+**To use optimized mode:**
+```bash
+# run.sh automatically uses shared memory TRT service
+./run.sh
+```
 
 ---
 
@@ -79,7 +117,9 @@ Measured on Jetson Orin NX 16GB (L4T r36.4.0, TensorRT 10.3):
 
 ## Quick Start
 
-### Option 1: PyTorch FP32 (Baseline) - ~5 FPS
+### Option 1: PyTorch FP32 (Development/Baseline Only) - ~5 FPS
+
+**WARNING: NOT for production use.** PyTorch mode is provided only for development testing and as a performance baseline. For production deployment, use Option 2 (TensorRT).
 
 Works out of the box, no TensorRT engine build required:
 
@@ -91,7 +131,7 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
   -r __ns:=/camera &
 
 # Launch optimized node
-ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw \
   model_name:=depth-anything/DA3-SMALL \
   backend:=pytorch \
@@ -115,7 +155,7 @@ python3 scripts/build_tensorrt_engine.py \
   --resolution 308
 
 # Step 2: Launch with TensorRT backend
-ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw \
   backend:=tensorrt_native \
   trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_308x308_*.engine
@@ -277,7 +317,7 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 
 ```bash
 # TensorRT FP16 (>30 FPS)
-ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   image_topic:=/camera/image_raw \
   backend:=tensorrt_native \
   trt_model_path:=/root/.cache/tensorrt/da3-small_fp16_518x518_AGX_ORIN_64GB.engine \
@@ -348,7 +388,7 @@ Watch the console output for performance metrics (logged every 5 seconds):
 
 **Check 3: Disable colorization temporarily**
 ```bash
-ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   ... \
   publish_colored:=false
 ```
@@ -397,7 +437,7 @@ output_width:=1280
 Enable pipeline parallelism (experimental):
 
 ```bash
-ros2 launch depth_anything_3_ros2 depth_anything_3_optimized.launch.py \
+ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   ... \
   use_cuda_streams:=true
 ```
@@ -457,7 +497,10 @@ Based on validated Orin NX 16GB results, projected performance for other platfor
 | AGX Orin 32GB | da3-small | 518 | FP16 | ~45-55 |
 | AGX Orin 64GB | da3-small | 518 | FP16 | ~50-60 |
 
-**Note**: Projections based on proportional compute capacity. Only Orin NX 16GB has validated measurements.
+**Notes:**
+- Projections based on proportional compute capacity. Only Orin NX 16GB has validated measurements.
+- Real-world FPS limited by camera input (~24 FPS for USB). See [Quick Reference](#quick-reference-by-platform) for recommended configurations.
+- For DA3-Base/Large projections, expect ~50% and ~25% of DA3-Small FPS respectively.
 
 ## Quality Comparison
 

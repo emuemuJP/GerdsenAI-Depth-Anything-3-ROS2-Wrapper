@@ -100,6 +100,8 @@ services:
       - /dev:/dev:rw
       # Shared memory for host-container TRT communication
       - /tmp/da3_shared:/tmp/da3_shared:rw
+      # Fast shared memory IPC via /dev/shm (RAM-backed)
+      - /dev/shm/da3:/dev/shm/da3:rw
       # Mount host TensorRT 10.3 (JetPack 6.2+) for DA3 compatibility
       - /usr/src/tensorrt:/usr/src/tensorrt:ro
       - /usr/lib/aarch64-linux-gnu/libnvinfer.so.10.3.0:/usr/lib/aarch64-linux-gnu/libnvinfer.so.10:ro

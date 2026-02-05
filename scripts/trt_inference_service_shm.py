@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 """
-TensorRT Inference Service - Host-side service for DA3 depth estimation.
+TensorRT Inference Service with Shared Memory IPC (Optimized).
 
-This service runs on the Jetson HOST (not in Docker) where TensorRT 10.3 is available.
-It watches for input tensors via shared memory/files and produces depth outputs.
-
-Architecture:
-    [Container: ROS2 Node] <-- /tmp/da3_shared --> [Host: TRT Inference Service]
+This version uses numpy.memmap on /dev/shm for ~15-25ms faster IPC
+compared to file-based np.load/np.save.
 
 Usage:
-    python3 scripts/trt_inference_service.py --engine models/tensorrt/da3-small-fp16.engine
-
-Requirements:
-    - TensorRT 10.3+ (available on JetPack 6.2+ host)
-    - numpy, pycuda
+    python3 scripts/trt_inference_service_shm.py --engine models/tensorrt/da3-small-fp16.engine
 """
 
 import argparse
@@ -21,8 +14,7 @@ import os
 import sys
 import time
 import signal
-import struct
-import fcntl
+import mmap
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -39,14 +31,19 @@ except ImportError as e:
     sys.exit(1)
 
 
-# Shared memory paths
-SHARED_DIR = Path("/tmp/da3_shared")
-INPUT_PATH = SHARED_DIR / "input.npy"
-OUTPUT_PATH = SHARED_DIR / "output.npy"
-LOCK_PATH = SHARED_DIR / "lock"
-STATUS_PATH = SHARED_DIR / "status"
-REQUEST_PATH = SHARED_DIR / "request"
-STATS_PATH = SHARED_DIR / "stats"
+# Shared memory paths - use /dev/shm for RAM-backed storage
+SHM_DIR = Path("/dev/shm/da3")
+INPUT_SHM = SHM_DIR / "input.bin"
+OUTPUT_SHM = SHM_DIR / "output.bin"
+REQUEST_SHM = SHM_DIR / "request"
+STATUS_SHM = SHM_DIR / "status"
+STATS_PATH = SHM_DIR / "stats"
+
+# Fixed shapes for DA3-small @ 518x518
+INPUT_SHAPE = (1, 1, 3, 518, 518)
+OUTPUT_SHAPE = (1, 518, 518)
+INPUT_SIZE = int(np.prod(INPUT_SHAPE)) * 4  # float32 = 4 bytes
+OUTPUT_SIZE = int(np.prod(OUTPUT_SHAPE)) * 4
 
 
 class TRTLogger(trt.ILogger):
@@ -110,7 +107,6 @@ class TRTInferenceEngine:
             dtype = trt.nptype(self.engine.get_tensor_dtype(name))
             shape = self.engine.get_tensor_shape(name)
 
-            # Handle dynamic shapes - use optimization profile
             if -1 in shape:
                 shape = self.context.get_tensor_shape(name)
 
@@ -138,47 +134,30 @@ class TRTInferenceEngine:
             self.bindings.append(int(device_mem))
 
     def infer(self, input_tensor: np.ndarray) -> dict:
-        """
-        Run inference on input tensor.
-
-        Args:
-            input_tensor: Input image tensor (1x1x3xHxW or 1x3xHxW)
-
-        Returns:
-            Dictionary with output tensors (depth, confidence, etc.)
-        """
-        # Ensure correct shape
+        """Run inference on input tensor."""
         if input_tensor.shape != self.input_shape:
             if len(input_tensor.shape) == 4 and len(self.input_shape) == 5:
-                # Add batch dimension if needed
                 input_tensor = input_tensor.reshape(self.input_shape)
 
-        # Copy input to host buffer
         np.copyto(self.inputs[0]["host"], input_tensor.ravel())
 
-        # Transfer input to GPU
         cuda.memcpy_htod_async(
             self.inputs[0]["device"], self.inputs[0]["host"], self.stream
         )
 
-        # Set tensor addresses
         for inp in self.inputs:
             self.context.set_tensor_address(inp["name"], int(inp["device"]))
         for out in self.outputs:
             self.context.set_tensor_address(out["name"], int(out["device"]))
 
-        # Run inference
         self.context.execute_async_v3(stream_handle=self.stream.handle)
 
-        # Transfer outputs back to host
         outputs = {}
         for out in self.outputs:
             cuda.memcpy_dtoh_async(out["host"], out["device"], self.stream)
 
-        # Synchronize
         self.stream.synchronize()
 
-        # Collect outputs
         for out in self.outputs:
             outputs[out["name"]] = out["host"].reshape(out["shape"]).copy()
 
@@ -196,104 +175,95 @@ class TRTInferenceEngine:
             out["device"].free()
 
 
-class InferenceService:
+class SharedMemoryService:
     """
-    File-based inference service for host-container communication.
+    Shared memory inference service using numpy.memmap on /dev/shm.
 
-    Protocol:
-    1. Container writes input tensor to INPUT_PATH
-    2. Container writes timestamp to REQUEST_PATH
-    3. Host detects new request, runs inference
-    4. Host writes output to OUTPUT_PATH
-    5. Host writes "ready" to STATUS_PATH
+    This eliminates file I/O overhead by using RAM-backed memory mapping.
+    Expected latency reduction: 15-25ms compared to file-based IPC.
     """
 
-    def __init__(self, engine: TRTInferenceEngine, poll_interval: float = 0.001):
+    def __init__(self, engine: TRTInferenceEngine, poll_interval: float = 0.0005):
         self.engine = engine
         self.poll_interval = poll_interval
         self.running = False
         self.stats = {"frames": 0, "total_time": 0.0}
 
-        # Setup shared directory
-        SHARED_DIR.mkdir(parents=True, exist_ok=True)
-        os.chmod(SHARED_DIR, 0o777)
+        # Setup shared memory directory
+        SHM_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(SHM_DIR, 0o777)
 
-        # Write initial status
-        self._write_status("initializing")
-
-        # Clear any stale files
-        for path in [INPUT_PATH, OUTPUT_PATH, REQUEST_PATH]:
-            if path.exists():
-                path.unlink()
+        # Pre-allocate shared memory files
+        self._init_shared_memory()
 
         self._write_status("ready")
-        print(f"Inference service ready")
-        print(f"  Shared dir: {SHARED_DIR}")
-        print(f"  Input shape: {engine.get_input_shape()}")
+        print(f"Shared Memory Inference Service ready")
+        print(f"  SHM dir: {SHM_DIR}")
+        print(f"  Input: {INPUT_SHM} ({INPUT_SIZE} bytes)")
+        print(f"  Output: {OUTPUT_SHM} ({OUTPUT_SIZE} bytes)")
+        print(f"  Poll interval: {poll_interval * 1000:.2f}ms")
+
+    def _init_shared_memory(self):
+        """Initialize shared memory files with fixed sizes."""
+        # Create input buffer
+        if not INPUT_SHM.exists() or INPUT_SHM.stat().st_size != INPUT_SIZE:
+            with open(INPUT_SHM, 'wb') as f:
+                f.write(b'\x00' * INPUT_SIZE)
+        os.chmod(INPUT_SHM, 0o666)
+
+        # Create output buffer
+        if not OUTPUT_SHM.exists() or OUTPUT_SHM.stat().st_size != OUTPUT_SIZE:
+            with open(OUTPUT_SHM, 'wb') as f:
+                f.write(b'\x00' * OUTPUT_SIZE)
+        os.chmod(OUTPUT_SHM, 0o666)
+
+        # Memory map the files
+        self.input_mmap = np.memmap(
+            INPUT_SHM, dtype=np.float32, mode='r', shape=INPUT_SHAPE
+        )
+        self.output_mmap = np.memmap(
+            OUTPUT_SHM, dtype=np.float32, mode='r+', shape=OUTPUT_SHAPE
+        )
+
+        print(f"  Memory mapped input: {self.input_mmap.shape}")
+        print(f"  Memory mapped output: {self.output_mmap.shape}")
 
     def _write_status(self, status: str):
-        """Write status to file."""
-        STATUS_PATH.write_text(status)
+        """Write status to shared memory file."""
+        STATUS_SHM.write_text(status)
 
     def _write_stats(self, fps: float, latency_ms: float, frames: int):
-        """Write stats to file for performance monitor."""
+        """Write stats for monitoring."""
         STATS_PATH.write_text(f"{fps:.2f},{latency_ms:.2f},{frames}")
 
-    def _acquire_lock(self) -> int:
-        """Acquire file lock for synchronization."""
-        fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_RDWR)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        return fd
-
-    def _release_lock(self, fd: int):
-        """Release file lock."""
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+    def _check_request(self) -> Optional[float]:
+        """Check if new request is pending. Returns request timestamp or None."""
+        if not REQUEST_SHM.exists():
+            return None
+        try:
+            content = REQUEST_SHM.read_text().strip()
+            if content:
+                return float(content)
+        except (ValueError, OSError):
+            pass
+        return None
 
     def process_request(self) -> bool:
-        """
-        Check for and process inference request.
-
-        Returns:
-            True if request was processed, False otherwise.
-        """
-        if not REQUEST_PATH.exists():
+        """Process inference request using memory-mapped I/O."""
+        request_time = self._check_request()
+        if request_time is None:
             return False
 
         try:
-            # Read request timestamp with race condition handling
-            # The file may exist but be empty if caught during write
-            request_text = REQUEST_PATH.read_text().strip()
-            if not request_text:
-                # File exists but empty - caught during write, skip this iteration
-                return False
-            try:
-                request_time = float(request_text)
-            except ValueError:
-                # Invalid content, skip this iteration
-                return False
+            start = time.perf_counter()
 
-            # Load input tensor with validation
-            if not INPUT_PATH.exists():
-                return False
-
-            input_tensor = np.load(INPUT_PATH)
-
-            # Validate input shape matches expected
-            expected_size = int(np.prod(self.engine.get_input_shape()))
-            if input_tensor.size != expected_size:
-                raise ValueError(
-                    f"Input size mismatch: got {input_tensor.size}, "
-                    f"expected {expected_size} for shape {self.engine.get_input_shape()}"
-                )
+            # Read directly from memory map (no file I/O!)
+            input_tensor = np.array(self.input_mmap)
 
             # Run inference
-            start = time.perf_counter()
             outputs = self.engine.infer(input_tensor)
-            inference_time = time.perf_counter() - start
 
-            # Save output (primary depth output) - atomic write
-            # Find the depth output tensor
+            # Find depth output
             depth_key = None
             for key in outputs:
                 if "depth" in key.lower() or "predicted" in key.lower():
@@ -302,22 +272,32 @@ class InferenceService:
             if depth_key is None:
                 depth_key = list(outputs.keys())[0]
 
-            # Atomic write: temp file + fsync + rename
-            temp_output = OUTPUT_PATH.parent / "output_tmp.npy"
-            with open(temp_output, 'wb') as f:
-                np.save(f, outputs[depth_key], allow_pickle=False)
-                f.flush()
-                os.fsync(f.fileno())
-            temp_output.replace(OUTPUT_PATH)
+            depth_output = outputs[depth_key]
+
+            # Remove extra dimensions if needed
+            while depth_output.ndim > 3:
+                depth_output = depth_output[0]
+            if depth_output.shape != OUTPUT_SHAPE:
+                depth_output = depth_output.reshape(OUTPUT_SHAPE)
+
+            # Write directly to memory map (no file I/O!)
+            self.output_mmap[:] = depth_output
+            self.output_mmap.flush()
+
+            # CRITICAL: Force sync to ensure data is visible to client process
+            # This prevents race condition where client reads stale data
+            if hasattr(self.output_mmap, '_mmap') and self.output_mmap._mmap is not None:
+                self.output_mmap._mmap.flush()
+            os.sync()  # Memory barrier to ensure write ordering
+
+            inference_time = time.perf_counter() - start
 
             # Update stats
             self.stats["frames"] += 1
             self.stats["total_time"] += inference_time
 
-            # Clear request
-            REQUEST_PATH.unlink()
-
-            # Update status with timing
+            # Clear request and update status
+            REQUEST_SHM.unlink()
             self._write_status(f"complete:{inference_time:.4f}")
 
             return True
@@ -330,7 +310,7 @@ class InferenceService:
     def run(self):
         """Main service loop."""
         self.running = True
-        print(f"\nService running. Waiting for requests...")
+        print(f"\nService running with shared memory IPC...")
         print(f"Press Ctrl+C to stop.\n")
 
         last_stats_write = time.time()
@@ -348,16 +328,14 @@ class InferenceService:
                 fps = 1.0 / avg_time if avg_time > 0 else 0
                 latency_ms = avg_time * 1000
 
-                # Write stats for performance monitor every second
                 if now - last_stats_write > 1.0:
                     self._write_stats(fps, latency_ms, self.stats["frames"])
                     last_stats_write = now
 
-                # Print to console every 5 seconds
                 if now - last_stats_print > 5.0:
                     print(
                         f"Stats: {self.stats['frames']} frames, "
-                        f"avg {latency_ms:.1f}ms ({fps:.1f} FPS)"
+                        f"avg {latency_ms:.1f}ms ({fps:.1f} FPS) [SHM mode]"
                     )
                     last_stats_print = now
 
@@ -370,7 +348,7 @@ class InferenceService:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="TensorRT Inference Service for DA3 depth estimation"
+        description="TensorRT Inference Service with Shared Memory IPC"
     )
     parser.add_argument(
         "--engine",
@@ -381,18 +359,16 @@ def main():
     parser.add_argument(
         "--poll-interval",
         type=float,
-        default=0.001,
-        help="Poll interval in seconds (default: 1ms)",
+        default=0.0005,
+        help="Poll interval in seconds (default: 0.5ms)",
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Enable verbose TensorRT logging"
     )
     args = parser.parse_args()
 
-    # Resolve engine path
     engine_path = Path(args.engine)
     if not engine_path.is_absolute():
-        # Try relative to script location
         script_dir = Path(__file__).parent.parent
         engine_path = script_dir / args.engine
 
@@ -400,20 +376,16 @@ def main():
         print(f"Error: Engine file not found: {engine_path}")
         sys.exit(1)
 
-    print("=" * 50)
-    print("TensorRT Inference Service")
-    print("=" * 50)
+    print("=" * 60)
+    print("TensorRT Inference Service (Shared Memory Mode)")
+    print("=" * 60)
     print(f"TensorRT version: {trt.__version__}")
     print(f"Engine: {engine_path}")
     print()
 
-    # Load engine
     engine = TRTInferenceEngine(str(engine_path), verbose=args.verbose)
+    service = SharedMemoryService(engine, poll_interval=args.poll_interval)
 
-    # Create service
-    service = InferenceService(engine, poll_interval=args.poll_interval)
-
-    # Handle signals
     def signal_handler(signum, frame):
         print("\nReceived shutdown signal...")
         service.stop()
@@ -421,7 +393,6 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Run service
     try:
         service.run()
     finally:

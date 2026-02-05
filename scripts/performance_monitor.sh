@@ -11,8 +11,12 @@
 
 set -e
 
-# Configuration
-SHARED_DIR="/tmp/da3_shared"
+# Configuration - prefer shared memory IPC, fall back to file-based
+if [ -d "/dev/shm/da3" ]; then
+    SHARED_DIR="/dev/shm/da3"
+else
+    SHARED_DIR="/tmp/da3_shared"
+fi
 UPDATE_INTERVAL=1
 USE_COLOR=true
 RUN_ONCE=false

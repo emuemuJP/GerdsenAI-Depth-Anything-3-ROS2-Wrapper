@@ -1,12 +1,19 @@
 # Core dependencies for Depth Anything 3 ROS2 Wrapper
+#
+# NOTE: Production inference uses TensorRT on the Jetson host (not in container).
+# PyTorch is required as a library dependency for the DA3 Python package but
+# is NOT used for production inference. See README.md for architecture details.
+#
+# ROS2 packages (rclpy, cv_bridge, sensor_msgs) are installed via apt, not pip.
 
-# PyTorch (CUDA 12.x support for Jetson Orin AGX)
+# PyTorch (library dependency for DA3 package, NOT for production inference)
 torch>=2.1.0
 torchvision>=0.16.0
 
 # Hugging Face ecosystem
 transformers>=4.35.0
 huggingface-hub>=0.19.0
+safetensors>=0.4.0
 
 # Computer vision
 opencv-python>=4.8.0
@@ -15,11 +22,31 @@ pillow>=10.0.0
 # Scientific computing
 numpy>=1.24.0,<2.0
 
+# Configuration
+pyyaml>=6.0
+
 # Vision transformer backbone
 timm>=0.9.0
 
+# Rendering (required by DA3)
+gsplat>=1.0.0
+
+# ONNX (for TensorRT engine building)
+onnx>=1.14.0
+
 # Depth Anything 3 (install from source)
 # Install with: pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
+
+# Host TensorRT service (Jetson only - auto-installed by run.sh and install_dependencies.sh)
+# These run on the Jetson HOST, not in the container:
+# - numpy (shared memory buffers)
+# - pycuda (CUDA memory management)
+# - tensorrt (Python bindings)
+# - onnx (engine building)
+# Install manually if needed: pip3 install pycuda tensorrt --break-system-packages
+
+# Testing
+pytest>=7.0.0
 
 # Development dependencies (type checking)
 types-setuptools>=65.0.0

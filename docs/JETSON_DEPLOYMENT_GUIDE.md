@@ -4,7 +4,7 @@
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Platform | Jetson Orin NX 16GB | Seeed reComputer |
+| Platform | Jetson Orin NX 16GB | [Seeed reComputer J4012](https://www.seeedstudio.com/reComputer-Robotics-J4012-with-GMSL-extension-board-p-6537.html) |
 | JetPack | 6.2 (L4T R36.4) | Required for TRT 10.3 |
 | TensorRT | 10.3.0.30 | Host-side inference |
 | CUDA | 12.6 | Host |
@@ -13,30 +13,29 @@
 
 ---
 
-## Architecture: Host-Container Split
+## Architecture: Host-Container Split with Shared Memory IPC
 
-Due to broken TensorRT Python bindings in available Jetson containers ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture:
+Due to broken TensorRT Python bindings in available Jetson containers ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture with optimized shared memory IPC:
 
 ```
 +---------------------------------------------------------------+
 |                      HOST (JetPack 6.2+)                       |
 |  +----------------------------------------------------------+  |
-|  |           TRT Inference Service (Python)                 |  |
-|  |  - Loads engine with host TensorRT 10.3                  |  |
-|  |  - Watches /tmp/da3_shared/input.npy                     |  |
-|  |  - Writes /tmp/da3_shared/output.npy                     |  |
+|  |      TRT Inference Service (trt_inference_service_shm.py) |  |
+|  |  - Loads engine with host TensorRT 10.3                   |  |
+|  |  - RAM-backed IPC via /dev/shm/da3 (numpy.memmap)         |  |
+|  |  - ~15ms inference + ~8ms IPC = ~23ms total               |  |
 |  +----------------------------------------------------------+  |
 |                              ^                                  |
-|                              | shared memory                    |
+|                              | /dev/shm/da3 (shared memory)     |
 |                              v                                  |
 |  +----------------------------------------------------------+  |
-|  |              Docker Container (L4T r36.2.0)              |  |
+|  |              Docker Container (L4T r36.4.0)               |  |
 |  |  +----------------------------------------------------+  |  |
 |  |  |              ROS2 Depth Node                       |  |  |
+|  |  |  - SharedMemoryInferenceFast class                 |  |  |
 |  |  |  - Subscribes to /image_raw                        |  |  |
-|  |  |  - Writes input to shared memory                   |  |  |
-|  |  |  - Reads depth from shared memory                  |  |  |
-|  |  |  - Publishes to /depth                             |  |  |
+|  |  |  - Publishes to /depth, /depth_colored             |  |  |
 |  |  +----------------------------------------------------+  |  |
 |  +----------------------------------------------------------+  |
 +---------------------------------------------------------------+
@@ -147,7 +146,20 @@ See [JETSON_BENCHMARKS.md](JETSON_BENCHMARKS.md) for comprehensive benchmarks.
 
 ## Communication Protocol
 
-The host service and container communicate via memory-mapped files:
+### Production: Shared Memory IPC (`/dev/shm/da3`)
+
+The host `trt_inference_service_shm.py` and container communicate via RAM-backed shared memory for minimal latency (~8ms IPC overhead):
+
+| File | Direction | Format |
+|------|-----------|--------|
+| `/dev/shm/da3/input.bin` | Container -> Host | float32 memmap [1,1,3,518,518] |
+| `/dev/shm/da3/output.bin` | Host -> Container | float32 memmap [1,518,518] |
+| `/dev/shm/da3/request` | Container -> Host | Timestamp signal |
+| `/dev/shm/da3/status` | Host -> Container | "ready", "complete:time", "error:msg" |
+
+### Fallback: File-based IPC (`/tmp/da3_shared`)
+
+The legacy file-based IPC is still supported for backward compatibility (~40ms IPC overhead):
 
 | File | Direction | Format |
 |------|-----------|--------|
@@ -162,10 +174,11 @@ The host service and container communicate via memory-mapped files:
 
 ### Host service not detecting requests
 
-Check shared directory permissions:
+Check shared directory permissions (production uses `/dev/shm/da3`):
 ```bash
-ls -la /tmp/da3_shared/
+ls -la /dev/shm/da3/
 # Should be readable/writable by both host user and container
+# Fallback path: ls -la /tmp/da3_shared/
 ```
 
 ### Container cannot write to shared memory

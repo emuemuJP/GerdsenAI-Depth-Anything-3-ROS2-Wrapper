@@ -5,7 +5,7 @@
 # This script handles everything needed to run the depth estimation demo:
 #   1. Builds Docker image (if not already built)
 #   2. Downloads ONNX model and builds TensorRT engine (first run only)
-#   3. Starts TensorRT inference service on host (10-15 FPS with file IPC)
+#   3. Starts TensorRT inference service on host (20-30 FPS with shared memory IPC)
 #   4. Auto-detects camera (USB or CSI)
 #   5. Starts ROS2 container with camera and depth nodes
 #   6. Opens depth visualization window
@@ -43,7 +43,7 @@ NC='\033[0m'
 # Configuration
 CONTAINER_NAME="da3_demo"
 IMAGE_NAME="depth_anything_3_ros2:jetson"
-SHARED_DIR="/tmp/da3_shared"
+SHARED_DIR="/dev/shm/da3"
 ONNX_DIR="models/onnx"
 TRT_DIR="models/tensorrt"
 ONNX_MODEL="$ONNX_DIR/da3-small-embedded.onnx"
@@ -169,9 +169,58 @@ fi
 # Check Python TensorRT bindings
 if [ "$USE_TRT" = true ]; then
     if ! python3 -c "import tensorrt" 2>/dev/null; then
-        echo -e "${YELLOW}WARNING: TensorRT Python bindings not installed${NC}"
-        echo "         Will use PyTorch backend (~5 FPS instead of ~40 FPS)"
-        USE_TRT=false
+        echo -e "${YELLOW}TensorRT Python bindings not found, attempting install...${NC}"
+
+        # Try pip install first (works on JetPack 6.x)
+        if pip3 install --quiet tensorrt 2>/dev/null; then
+            if python3 -c "import tensorrt" 2>/dev/null; then
+                echo -e "       ${GREEN}TensorRT bindings installed via pip${NC}"
+            else
+                USE_TRT=false
+            fi
+        # Try apt install as fallback
+        elif sudo apt-get install -y python3-tensorrt 2>/dev/null; then
+            if python3 -c "import tensorrt" 2>/dev/null; then
+                echo -e "       ${GREEN}TensorRT bindings installed via apt${NC}"
+            else
+                USE_TRT=false
+            fi
+        else
+            USE_TRT=false
+        fi
+
+        if [ "$USE_TRT" = false ]; then
+            echo -e "${YELLOW}WARNING: Could not install TensorRT Python bindings${NC}"
+            echo "         Manual install: pip3 install tensorrt --break-system-packages"
+            echo "         Will use PyTorch backend (~5 FPS instead of ~40 FPS)"
+        fi
+    fi
+fi
+
+# Check host dependencies for TRT service (numpy, pycuda)
+if [ "$USE_TRT" = true ]; then
+    # Check numpy (required for shared memory buffers)
+    if ! python3 -c "import numpy" 2>/dev/null; then
+        echo -e "${YELLOW}numpy not found, installing...${NC}"
+        if pip3 install "numpy>=1.24.0,<2.0" --break-system-packages 2>/dev/null || pip3 install "numpy>=1.24.0,<2.0" 2>/dev/null; then
+            echo -e "       ${GREEN}numpy installed${NC}"
+        else
+            echo -e "${YELLOW}WARNING: Could not install numpy${NC}"
+            echo "         Manual install: pip3 install numpy --break-system-packages"
+            USE_TRT=false
+        fi
+    fi
+
+    # Check pycuda (required for TRT service)
+    if ! python3 -c "import pycuda.driver" 2>/dev/null; then
+        echo -e "${YELLOW}pycuda not found, installing...${NC}"
+        if pip3 install pycuda --break-system-packages 2>/dev/null || pip3 install pycuda 2>/dev/null; then
+            echo -e "       ${GREEN}pycuda installed${NC}"
+        else
+            echo -e "${YELLOW}WARNING: Could not install pycuda${NC}"
+            echo "         Manual install: pip3 install pycuda --break-system-packages"
+            USE_TRT=false
+        fi
     fi
 fi
 
@@ -289,12 +338,8 @@ if [ "$USE_TRT" = true ]; then
     chmod 777 "$SHARED_DIR"
     rm -f "$SHARED_DIR"/* 2>/dev/null || true
 
-    # Install pycuda if needed
-    python3 -c "import pycuda.driver" 2>/dev/null || pip3 install -q pycuda
-
-    python3 scripts/trt_inference_service.py \
+    python3 scripts/trt_inference_service_shm.py \
         --engine "$TRT_ENGINE" \
-        --poll-interval 0.001 \
         > /tmp/trt_service.log 2>&1 &
     TRT_SERVICE_PID=$!
 
@@ -373,10 +418,15 @@ if [ "$USE_TRT" = true ]; then
     LAUNCH_CMD+=" use_shared_memory:=true"
 fi
 
+# Add depth visualization when display is available
+if [ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ]; then
+    LAUNCH_CMD+=" & sleep 3 && ros2 run rqt_image_view rqt_image_view /depth_anything_3/depth_colored"
+fi
+
 echo ""
 echo -e "${BOLD}Demo Configuration:${NC}"
 echo "  Camera:   $CAMERA_DEVICE"
-echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (10-15 FPS via file IPC)" || echo "PyTorch (~5 FPS)")"
+echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (20-30 FPS via shared memory)" || echo "PyTorch (~5 FPS)")"
 echo "  Display:  $([ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ] && echo "Yes" || echo "Headless")"
 echo ""
 
@@ -401,8 +451,15 @@ echo "  Colored: /depth_anything_3/depth_colored"
 echo ""
 
 if [ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ]; then
-    echo "View depth output:"
-    echo "  rqt_image_view /depth_anything_3/depth_colored"
+    echo "Depth viewer: Opening automatically (rqt_image_view)"
+    echo ""
+    echo "Additional views:"
+    echo "  rqt_image_view /depth_anything_3/depth          # Raw depth (32FC1)"
+    echo "  rqt_image_view /camera/image_raw                # Camera feed"
+    echo ""
+else
+    echo "Headless mode - no viewer started"
+    echo "View remotely: ros2 topic echo /depth_anything_3/depth"
     echo ""
 fi
 

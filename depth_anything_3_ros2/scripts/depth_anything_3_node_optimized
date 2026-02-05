@@ -1,6 +1,0 @@
-#!/usr/bin/env python3
-"""Entry point script for depth_anything_3_node_optimized."""
-from depth_anything_3_ros2.depth_anything_3_node_optimized import main
-
-if __name__ == '__main__':
-    main()
