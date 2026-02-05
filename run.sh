@@ -5,7 +5,7 @@
 # This script handles everything needed to run the depth estimation demo:
 #   1. Builds Docker image (if not already built)
 #   2. Downloads ONNX model and builds TensorRT engine (first run only)
-#   3. Starts TensorRT inference service on host (10-15 FPS with file IPC)
+#   3. Starts TensorRT inference service on host (20-30 FPS with shared memory IPC)
 #   4. Auto-detects camera (USB or CSI)
 #   5. Starts ROS2 container with camera and depth nodes
 #   6. Opens depth visualization window
@@ -43,7 +43,7 @@ NC='\033[0m'
 # Configuration
 CONTAINER_NAME="da3_demo"
 IMAGE_NAME="depth_anything_3_ros2:jetson"
-SHARED_DIR="/tmp/da3_shared"
+SHARED_DIR="/dev/shm/da3"
 ONNX_DIR="models/onnx"
 TRT_DIR="models/tensorrt"
 ONNX_MODEL="$ONNX_DIR/da3-small-embedded.onnx"
@@ -292,9 +292,8 @@ if [ "$USE_TRT" = true ]; then
     # Install pycuda if needed
     python3 -c "import pycuda.driver" 2>/dev/null || pip3 install -q pycuda
 
-    python3 scripts/trt_inference_service.py \
+    python3 scripts/trt_inference_service_shm.py \
         --engine "$TRT_ENGINE" \
-        --poll-interval 0.001 \
         > /tmp/trt_service.log 2>&1 &
     TRT_SERVICE_PID=$!
 
@@ -376,7 +375,7 @@ fi
 echo ""
 echo -e "${BOLD}Demo Configuration:${NC}"
 echo "  Camera:   $CAMERA_DEVICE"
-echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (10-15 FPS via file IPC)" || echo "PyTorch (~5 FPS)")"
+echo "  Backend:  $([ "$USE_TRT" = true ] && echo "TensorRT FP16 (20-30 FPS via shared memory)" || echo "PyTorch (~5 FPS)")"
 echo "  Display:  $([ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ] && echo "Yes" || echo "Headless")"
 echo ""
 
