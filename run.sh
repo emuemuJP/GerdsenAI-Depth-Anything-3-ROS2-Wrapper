@@ -418,6 +418,11 @@ if [ "$USE_TRT" = true ]; then
     LAUNCH_CMD+=" use_shared_memory:=true"
 fi
 
+# Add depth visualization when display is available
+if [ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ]; then
+    LAUNCH_CMD+=" & sleep 3 && ros2 run rqt_image_view rqt_image_view /depth_anything_3/depth_colored"
+fi
+
 echo ""
 echo -e "${BOLD}Demo Configuration:${NC}"
 echo "  Camera:   $CAMERA_DEVICE"
@@ -446,8 +451,15 @@ echo "  Colored: /depth_anything_3/depth_colored"
 echo ""
 
 if [ "$NO_DISPLAY" = false ] && [ -n "$DISPLAY" ]; then
-    echo "View depth output:"
-    echo "  rqt_image_view /depth_anything_3/depth_colored"
+    echo "Depth viewer: Opening automatically (rqt_image_view)"
+    echo ""
+    echo "Additional views:"
+    echo "  rqt_image_view /depth_anything_3/depth          # Raw depth (32FC1)"
+    echo "  rqt_image_view /camera/image_raw                # Camera feed"
+    echo ""
+else
+    echo "Headless mode - no viewer started"
+    echo "View remotely: ros2 topic echo /depth_anything_3/depth"
     echo ""
 fi
 
