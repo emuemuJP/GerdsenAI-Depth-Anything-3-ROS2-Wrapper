@@ -216,12 +216,12 @@ Due to broken TensorRT Python bindings in containers, we use a split architectur
 
 | Metric | Current | Target | Notes |
 |--------|---------|--------|-------|
-| FPS | 5-12 | >30 | File IPC overhead limits throughput |
-| TRT Inference | ~50ms | ~26ms | Host TRT working correctly |
-| GPU Utilization | 99% | - | GPU fully utilized during inference |
-| IPC Overhead | ~40ms | 0ms | File read/write bottleneck |
+| FPS | 23+ | >30 | Limited by camera input (~24 FPS) |
+| TRT Inference | ~15ms | - | Shared memory IPC optimized |
+| Total Frame Time | ~23ms | - | 43+ FPS processing capacity |
+| Processing Headroom | 43 FPS | - | Can handle faster camera input |
 
-**Optimization Path**: Native TensorRT in container would eliminate file IPC overhead and achieve 30+ FPS. Requires TensorRT Python bindings working in L4T r36.4.0 container.
+**Optimization Complete**: Shared memory IPC (`/dev/shm/da3`) reduced latency from ~90ms to ~23ms. The inference pipeline has significant headroom (43+ FPS capacity) and is now limited by camera input rate (~24 FPS), not processing.
 
 ## Architecture
 
