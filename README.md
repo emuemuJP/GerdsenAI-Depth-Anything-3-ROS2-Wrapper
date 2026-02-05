@@ -2,6 +2,8 @@
 
 # Depth Anything 3 ROS2 Wrapper
 
+> **2026-02-05**: TensorRT migration complete. PyTorch baseline: ~5 FPS (Orin AGX 64GB) vs TensorRT production: **23+ FPS real-world / 43+ FPS capacity** (Orin NX 16GB).
+
 <img width="3440" height="1440" alt="image" src="https://github.com/user-attachments/assets/4d2c1cdf-0d8c-448c-a3f9-8e3557e37d81" />
 
 
