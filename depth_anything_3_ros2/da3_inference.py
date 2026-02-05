@@ -377,6 +377,15 @@ class SharedMemoryInferenceFast:
         else:
             raise TimeoutError(f"SHM inference timeout after {self.timeout}s")
 
+        # CRITICAL: Re-open memmap to ensure we get fresh data after TRT write
+        # This prevents reading stale cached data that causes color flickering
+        self._output_mmap = np.memmap(
+            OUTPUT_SHM, dtype=np.float32, mode='r', shape=OUTPUT_SHAPE
+        )
+
+        # Small sync delay to ensure TRT service has finished flushing
+        time.sleep(0.001)  # 1ms sync delay
+
         # Read directly from memory map (no file I/O!)
         depth = np.array(self._output_mmap)
 

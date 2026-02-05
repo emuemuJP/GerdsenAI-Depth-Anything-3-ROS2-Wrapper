@@ -284,6 +284,12 @@ class SharedMemoryService:
             self.output_mmap[:] = depth_output
             self.output_mmap.flush()
 
+            # CRITICAL: Force sync to ensure data is visible to client process
+            # This prevents race condition where client reads stale data
+            if hasattr(self.output_mmap, '_mmap') and self.output_mmap._mmap is not None:
+                self.output_mmap._mmap.flush()
+            os.sync()  # Memory barrier to ensure write ordering
+
             inference_time = time.perf_counter() - start
 
             # Update stats
