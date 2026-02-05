@@ -3,6 +3,8 @@
 # NOTE: Production inference uses TensorRT on the Jetson host (not in container).
 # PyTorch is required as a library dependency for the DA3 Python package but
 # is NOT used for production inference. See README.md for architecture details.
+#
+# ROS2 packages (rclpy, cv_bridge, sensor_msgs) are installed via apt, not pip.
 
 # PyTorch (library dependency for DA3 package, NOT for production inference)
 torch>=2.1.0
@@ -11,6 +13,7 @@ torchvision>=0.16.0
 # Hugging Face ecosystem
 transformers>=4.35.0
 huggingface-hub>=0.19.0
+safetensors>=0.4.0
 
 # Computer vision
 opencv-python>=4.8.0
@@ -24,6 +27,13 @@ timm>=0.9.0
 
 # Depth Anything 3 (install from source)
 # Install with: pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
+
+# Host TensorRT service (Jetson only, not needed in container)
+# pycuda  # Install on Jetson host: pip3 install pycuda --break-system-packages
+# tensorrt is a system package on Jetson, not pip-installable
+
+# Testing
+pytest>=7.0.0
 
 # Development dependencies (type checking)
 types-setuptools>=65.0.0
