@@ -40,7 +40,7 @@ TRT_DIR="models/tensorrt"
 ONNX_MODEL="$ONNX_DIR/da3-small-embedded.onnx"
 TRT_ENGINE="$TRT_DIR/da3-small-fp16.engine"
 TRTEXEC="/usr/src/tensorrt/bin/trtexec"
-SHARED_DIR="/tmp/da3_shared"
+SHARED_DIR="/dev/shm/da3"
 
 # Process IDs for cleanup
 TRT_SERVICE_PID=""
@@ -415,10 +415,9 @@ if [ "$USE_TRT" = true ]; then
     fi
 
     if [ "$USE_TRT" = true ]; then
-        # Start TRT service
-        python3 "$SCRIPT_DIR/trt_inference_service.py" \
+        # Start TRT service (shared memory mode)
+        python3 "$SCRIPT_DIR/trt_inference_service_shm.py" \
             --engine "$TRT_ENGINE" \
-            --poll-interval 0.001 \
             > /tmp/trt_service.log 2>&1 &
         TRT_SERVICE_PID=$!
 
