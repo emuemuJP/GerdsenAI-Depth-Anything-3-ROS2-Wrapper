@@ -2,9 +2,9 @@
 Version=1.0
 Type=Application
 Name=Depth Anything V3 Demo
-Comment=Launch Depth Anything V3 depth estimation demo
-Exec=bash -c "cd ~/depth_anything_3_ros2 && bash scripts/demo.sh"
+Comment=Launch Depth Anything V3 depth estimation demo (TensorRT)
+Exec=bash -c "cd ~/depth_anything_3_ros2 && ./run.sh"
 Icon=camera-video
 Terminal=true
 Categories=Development;Science;
-Keywords=depth;estimation;AI;ROS2;
+Keywords=depth;estimation;AI;ROS2;TensorRT;
