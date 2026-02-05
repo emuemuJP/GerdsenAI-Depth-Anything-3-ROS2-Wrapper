@@ -1,8 +1,13 @@
-# WORK IN PROGRESS LOOKING FOR CONTRIBUTERS
-
 # Depth Anything 3 ROS2 Wrapper
 
-> **2026-02-05**: TensorRT migration complete. PyTorch baseline: ~5 FPS (Orin AGX 64GB) vs TensorRT production: **23+ FPS real-world / 43+ FPS capacity** (Orin NX 16GB).
+### 2026-02-05: TensorRT Migration Complete
+
+| Platform | Backend | Model | Resolution | FPS | Notes |
+|----------|---------|-------|------------|-----|-------|
+| Orin AGX 64GB | PyTorch FP32 | DA3-Small | 518x518 | ~5 |  |
+| Orin NX 16GB | TensorRT FP16 | DA3-Small | 518x518 | **23+ / 43+** depending on camera stream |  |
+
+**Jetson Host Requirements:** Install `pycuda` and have TensorRT 10.3+ available on your Jetson host for production inference. The TRT service runs on the host, not in Docker.
 
 <img width="3440" height="1440" alt="image" src="https://github.com/user-attachments/assets/4d2c1cdf-0d8c-448c-a3f9-8e3557e37d81" />
 
