@@ -13,30 +13,29 @@
 
 ---
 
-## Architecture: Host-Container Split
+## Architecture: Host-Container Split with Shared Memory IPC
 
-Due to broken TensorRT Python bindings in available Jetson containers ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture:
+Due to broken TensorRT Python bindings in available Jetson containers ([Issue #714](https://github.com/dusty-nv/jetson-containers/issues/714)), we use a split architecture with optimized shared memory IPC:
 
 ```
 +---------------------------------------------------------------+
 |                      HOST (JetPack 6.2+)                       |
 |  +----------------------------------------------------------+  |
-|  |           TRT Inference Service (Python)                 |  |
-|  |  - Loads engine with host TensorRT 10.3                  |  |
-|  |  - Watches /tmp/da3_shared/input.npy                     |  |
-|  |  - Writes /tmp/da3_shared/output.npy                     |  |
+|  |      TRT Inference Service (trt_inference_service_shm.py) |  |
+|  |  - Loads engine with host TensorRT 10.3                   |  |
+|  |  - RAM-backed IPC via /dev/shm/da3 (numpy.memmap)         |  |
+|  |  - ~15ms inference + ~8ms IPC = ~23ms total               |  |
 |  +----------------------------------------------------------+  |
 |                              ^                                  |
-|                              | shared memory                    |
+|                              | /dev/shm/da3 (shared memory)     |
 |                              v                                  |
 |  +----------------------------------------------------------+  |
-|  |              Docker Container (L4T r36.2.0)              |  |
+|  |              Docker Container (L4T r36.4.0)               |  |
 |  |  +----------------------------------------------------+  |  |
 |  |  |              ROS2 Depth Node                       |  |  |
+|  |  |  - SharedMemoryInferenceFast class                 |  |  |
 |  |  |  - Subscribes to /image_raw                        |  |  |
-|  |  |  - Writes input to shared memory                   |  |  |
-|  |  |  - Reads depth from shared memory                  |  |  |
-|  |  |  - Publishes to /depth                             |  |  |
+|  |  |  - Publishes to /depth, /depth_colored             |  |  |
 |  |  +----------------------------------------------------+  |  |
 |  +----------------------------------------------------------+  |
 +---------------------------------------------------------------+
