@@ -129,39 +129,91 @@ Camera-specific code belongs ONLY in example launch files.
 
 ## Testing Guidelines
 
-### Unit Tests
+### Current Test Coverage - Help Wanted!
 
-Add unit tests for all new functions:
+We need community help improving test coverage. The project migrated to a TensorRT/SharedMemory architecture, but tests haven't caught up yet.
+
+**Current State:**
+
+| Component | Tests | Coverage | Status |
+|-----------|-------|----------|--------|
+| `DA3InferenceWrapper` (PyTorch fallback) | 6 | ~90% | Good |
+| `SharedMemoryInferenceFast` (production) | 0 | 0% | **Help wanted** |
+| `SharedMemoryInference` (IPC fallback) | 0 | 0% | **Help wanted** |
+| `DepthAnything3Node` (basic init) | 5 | ~40% | Needs work |
+| `DepthAnything3Node` (SharedMemory) | 0 | 0% | **Help wanted** |
+| `jetson_detector.py` | 22 | ~90% | Good |
+| `utils.py` | 0 | 0% | **Help wanted** |
+
+### Priority Contributions Needed
+
+**High Priority - Production Code Paths:**
+
+1. **SharedMemory Backend Tests** - The production inference path has no tests!
+   - Create `test/test_shared_memory_fast.py`
+   - Test `/dev/shm/da3` memmap initialization
+   - Test status file polling and timeout handling
+   - Mock `numpy.memmap` and `pathlib.Path`
+
+2. **Node SharedMemory Integration**
+   - Test `use_shared_memory=True` parameter handling
+   - Test backend selection logic (Fast -> Standard -> PyTorch fallback)
+   - Test behavior when TRT service is unavailable
+
+**Medium Priority:**
+
+3. **Utility Function Tests**
+   - Create `test/test_utils.py`
+   - Test `normalize_depth()`, `colorize_depth()`, `PerformanceMetrics`
+
+4. **Error Handling Tests**
+   - Test timeout conditions
+   - Test malformed status files
+   - Test missing shared memory directories
+
+### Writing Tests
+
+Example unit test structure:
 
 ```python
-# test/test_new_feature.py
+# test/test_shared_memory_fast.py
 import unittest
-from depth_anything_3_ros2.new_module import new_function
+from unittest.mock import patch, MagicMock
+from pathlib import Path
 
-class TestNewFeature(unittest.TestCase):
-    def test_basic_functionality(self):
-        result = new_function(input_data)
-        self.assertEqual(result, expected_output)
+class TestSharedMemoryInferenceFast(unittest.TestCase):
+    @patch('numpy.memmap')
+    @patch.object(Path, 'exists', return_value=True)
+    def test_initialization_with_existing_shm(self, mock_exists, mock_memmap):
+        # Test that SharedMemoryInferenceFast initializes correctly
+        pass
+
+    def test_timeout_when_service_unavailable(self):
+        # Test graceful timeout handling
+        pass
 ```
 
-### Integration Tests
+### Running Tests
 
-For ROS2 node changes, add integration tests:
+```bash
+# Run all tests
+colcon test --packages-select depth_anything_3_ros2
+colcon test-result --verbose
 
-```python
-# test/test_node_integration.py
-import rclpy
-from depth_anything_3_ros2.depth_anything_3_node import DepthAnything3Node
+# Run specific test file
+python3 -m pytest test/test_inference.py -v
 
-# Test node initialization, message handling, etc.
+# Run with coverage (if pytest-cov installed)
+python3 -m pytest test/ --cov=depth_anything_3_ros2 --cov-report=term-missing
 ```
 
-### Test Coverage
+### Test Coverage Goals
 
-Aim for high test coverage:
-- Core functionality: >90%
-- Utility functions: >80%
-- Error handling: Include failure cases
+Realistic targets we're working toward:
+- Production code paths (SharedMemory): >60%
+- PyTorch fallback: >80% (currently met)
+- Utility functions: >70%
+- Error handling: Include failure cases for all backends
 
 ## Documentation
 
