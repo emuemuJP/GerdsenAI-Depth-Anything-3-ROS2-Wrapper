@@ -2,6 +2,14 @@
 """
 TensorRT Inference Service - Host-side service for DA3 depth estimation.
 
+DEPRECATED: Use trt_inference_service_shm.py instead for ~4x better IPC performance.
+
+This file-based IPC version uses /tmp/da3_shared with numpy file I/O (~40ms overhead).
+The new shared memory version uses /dev/shm/da3 with numpy.memmap for:
+- ~8ms IPC overhead (vs ~40ms for file-based)
+- 23+ FPS real-world (vs ~11 FPS)
+- 43+ FPS processing capacity
+
 This service runs on the Jetson HOST (not in Docker) where TensorRT 10.3 is available.
 It watches for input tensors via shared memory/files and produces depth outputs.
 
