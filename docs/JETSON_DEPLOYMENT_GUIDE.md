@@ -146,7 +146,20 @@ See [JETSON_BENCHMARKS.md](JETSON_BENCHMARKS.md) for comprehensive benchmarks.
 
 ## Communication Protocol
 
-The host service and container communicate via memory-mapped files:
+### Production: Shared Memory IPC (`/dev/shm/da3`)
+
+The host `trt_inference_service_shm.py` and container communicate via RAM-backed shared memory for minimal latency (~8ms IPC overhead):
+
+| File | Direction | Format |
+|------|-----------|--------|
+| `/dev/shm/da3/input.bin` | Container -> Host | float32 memmap [1,1,3,518,518] |
+| `/dev/shm/da3/output.bin` | Host -> Container | float32 memmap [1,518,518] |
+| `/dev/shm/da3/request` | Container -> Host | Timestamp signal |
+| `/dev/shm/da3/status` | Host -> Container | "ready", "complete:time", "error:msg" |
+
+### Fallback: File-based IPC (`/tmp/da3_shared`)
+
+The legacy file-based IPC is still supported for backward compatibility (~40ms IPC overhead):
 
 | File | Direction | Format |
 |------|-----------|--------|
@@ -161,10 +174,11 @@ The host service and container communicate via memory-mapped files:
 
 ### Host service not detecting requests
 
-Check shared directory permissions:
+Check shared directory permissions (production uses `/dev/shm/da3`):
 ```bash
-ls -la /tmp/da3_shared/
+ls -la /dev/shm/da3/
 # Should be readable/writable by both host user and container
+# Fallback path: ls -la /tmp/da3_shared/
 ```
 
 ### Container cannot write to shared memory

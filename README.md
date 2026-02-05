@@ -1370,25 +1370,7 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
   device:=cpu
 ```
 
-#### 2. Model Download Failures
-
-**Error**: `Failed to load model from Hugging Face Hub`
-
-**Solutions**:
-- Check internet connection
-- Verify Hugging Face Hub is accessible
-- Download model manually and use local path
-
-```bash
-# Download manually
-python3 -c "from huggingface_hub import snapshot_download; snapshot_download('depth-anything/DA3-BASE')"
-
-# Use local path
-ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
-  model_name:=/path/to/local/model
-```
-
-#### 3. Image Encoding Mismatches
+#### 4. Image Encoding Mismatches
 
 **Error**: `CV Bridge conversion failed`
 
@@ -1404,7 +1386,7 @@ ros2 launch depth_anything_3_ros2 depth_anything_3.launch.py \
 --param input_encoding:=bgr8
 ```
 
-#### 4. No Image Received
+#### 5. No Image Received
 
 **Solutions**:
 - Verify camera is publishing: `ros2 topic echo /camera/image_raw`
@@ -1419,7 +1401,7 @@ ros2 topic list | grep image
 ros2 topic info /camera/image_raw
 ```
 
-#### 5. Low Frame Rate
+#### 6. Low Frame Rate
 
 **Solutions**:
 - Check GPU utilization: `nvidia-smi`
@@ -1432,7 +1414,7 @@ ros2 topic info /camera/image_raw
 --param log_inference_time:=true
 ```
 
-#### 6. Jetson Docker Build Failures
+#### 7. Jetson Docker Build Failures
 
 **Error**: `dustynv/ros:humble-pytorch-l4t-r36.x.x` not found
 
