@@ -1,6 +1,10 @@
 # Core dependencies for Depth Anything 3 ROS2 Wrapper
+#
+# NOTE: Production inference uses TensorRT on the Jetson host (not in container).
+# PyTorch is required as a library dependency for the DA3 Python package but
+# is NOT used for production inference. See README.md for architecture details.
 
-# PyTorch (CUDA 12.x support for Jetson Orin AGX)
+# PyTorch (library dependency for DA3 package, NOT for production inference)
 torch>=2.1.0
 torchvision>=0.16.0
 
