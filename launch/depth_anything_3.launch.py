@@ -68,6 +68,11 @@ def generate_launch_description():
             default_value='bgr8',
             description='Expected input image encoding (bgr8 or rgb8)'
         ),
+        DeclareLaunchArgument(
+            'keep_image_size',
+            default_value='false',
+            description='Resize output depth map to match input image resolution'
+        ),
 
         # Output configuration
         DeclareLaunchArgument(
@@ -136,6 +141,7 @@ def generate_launch_description():
                 'inference_height': LaunchConfiguration('inference_height'),
                 'inference_width': LaunchConfiguration('inference_width'),
                 'input_encoding': LaunchConfiguration('input_encoding'),
+                'keep_image_size': LaunchConfiguration('keep_image_size'),
                 'normalize_depth': LaunchConfiguration('normalize_depth'),
                 'publish_colored': LaunchConfiguration('publish_colored'),
                 'publish_confidence': LaunchConfiguration('publish_confidence'),

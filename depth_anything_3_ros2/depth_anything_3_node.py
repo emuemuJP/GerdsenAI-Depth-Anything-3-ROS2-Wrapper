@@ -15,9 +15,10 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
 from cv_bridge import CvBridge, CvBridgeError
+import cv2
 
 from .da3_inference import DA3InferenceWrapper, SharedMemoryInference, SharedMemoryInferenceFast
-from .utils import normalize_depth, colorize_depth, PerformanceMetrics
+from .utils import normalize_depth, colorize_depth, PerformanceMetrics, resize_image
 
 
 class DepthAnything3Node(Node):
@@ -137,6 +138,7 @@ class DepthAnything3Node(Node):
         self.declare_parameter("inference_height", 518)
         self.declare_parameter("inference_width", 518)
         self.declare_parameter("input_encoding", "bgr8")
+        self.declare_parameter("keep_image_size", False)
 
         # Output configuration
         self.declare_parameter("normalize_depth", True)
@@ -166,6 +168,7 @@ class DepthAnything3Node(Node):
         self.inference_height = self.get_parameter("inference_height").value
         self.inference_width = self.get_parameter("inference_width").value
         self.input_encoding = self.get_parameter("input_encoding").value
+        self.keep_image_size = self.get_parameter("keep_image_size").value
 
         # Output configuration
         self.normalize_depth_output = self.get_parameter("normalize_depth").value
@@ -232,6 +235,17 @@ class DepthAnything3Node(Node):
 
             # Extract depth map
             depth_map = result["depth"]
+
+            # Resize if requested
+            if self.keep_image_size:
+                original_size = (cv_image.shape[0], cv_image.shape[1])
+                depth_map = resize_image(
+                    depth_map, target_size=original_size, keep_aspect_ratio=False, interpolation=cv2.INTER_LINEAR
+                )
+                if "confidence" in result:
+                    result["confidence"] = resize_image(
+                        result["confidence"], target_size=original_size, keep_aspect_ratio=False, interpolation=cv2.INTER_NEAREST
+                    )
 
             # Normalize if requested
             if self.normalize_depth_output:
