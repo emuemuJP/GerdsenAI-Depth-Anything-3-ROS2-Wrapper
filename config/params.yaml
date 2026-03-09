@@ -11,6 +11,7 @@ depth_anything_3:
     inference_height: 518                   # Height for inference
     inference_width: 518                    # Width for inference
     input_encoding: "bgr8"                  # Expected input encoding (bgr8/rgb8)
+    keep_image_size: false                  # Resize output to match input resolution
 
     # Output configuration
     normalize_depth: true                   # Normalize depth to [0, 1] range
