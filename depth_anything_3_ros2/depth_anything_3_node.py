@@ -299,10 +299,18 @@ class DepthAnything3Node(Node):
             header: Original image header for timestamp and frame_id
         """
         try:
-            # Colorize depth
-            colored_depth = colorize_depth(
-                depth_map, colormap=self.colormap, normalize=True
-            )
+            # Normalize to [0, 1] for colorization (skip if already normalized)
+            if self.normalize_depth_output:
+                depth_norm = depth_map
+            else:
+                depth_norm = normalize_depth(depth_map)
+
+            # Smooth depth in float32 to reduce ViT patch boundary artifacts
+            depth_smooth = cv2.GaussianBlur(depth_norm, (7, 7), sigmaX=1.5)
+
+            # Convert to uint8 and apply colormap
+            depth_u8 = (depth_smooth * 255).astype(np.uint8)
+            colored_depth = cv2.applyColorMap(depth_u8, cv2.COLORMAP_TURBO)
 
             # Convert to ROS message
             colored_msg = self.bridge.cv2_to_imgmsg(colored_depth, encoding="bgr8")

@@ -467,6 +467,7 @@ class DA3InferenceWrapper:
         self.cache_dir = cache_dir
         self._model = None
         self._device = None
+        self._use_raw_model = False  # True when using DepthAnything3Net directly
 
         # Validate and set device
         self.device = self._setup_device(device)
@@ -587,11 +588,19 @@ class DA3InferenceWrapper:
                 cache_dir=self.cache_dir,
             )
             state_dict = load_file(weights_path)
-            self._model.load_state_dict(state_dict, strict=False)
+
+            # Strip "model." prefix from keys if present
+            # (HF safetensors uses "model.backbone..." but the model expects "backbone...")
+            cleaned = {}
+            for k, v in state_dict.items():
+                new_key = k.removeprefix("model.")
+                cleaned[new_key] = v
+            self._model.load_state_dict(cleaned, strict=False)
 
             # Move to device and set eval mode
             self._model = self._model.to(device=self.device)
             self._model.eval()
+            self._use_raw_model = True
 
             logger.info(f"Model loaded directly: {self.model_name}")
 
@@ -646,22 +655,51 @@ class DA3InferenceWrapper:
             image = image.astype(np.uint8)
 
         try:
-            # Convert numpy array to PIL Image for DA3 API
-            pil_image = Image.fromarray(image)
+            if self._use_raw_model:
+                # Direct forward pass for DepthAnything3Net (fallback path)
+                import cv2
 
-            # Run inference
-            with torch.no_grad():
-                prediction = self._model.inference([pil_image])
+                # Preprocess: resize, normalize, to tensor
+                target_size = (518, 518)
+                input_img = cv2.resize(image, target_size, interpolation=cv2.INTER_LINEAR)
+                tensor = input_img.astype(np.float32) / 255.0
+                mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+                std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+                tensor = (tensor - mean) / std
+                tensor = tensor.transpose(2, 0, 1)  # HWC -> CHW
+                # DA3 expects (B, N, C, H, W) where N=num_images=1
+                input_tensor = torch.from_numpy(tensor[np.newaxis, np.newaxis, ...]).to(self.device)
 
-            # Extract results
-            result = {"depth": prediction.depth[0].astype(np.float32)}
+                with torch.no_grad():
+                    prediction = self._model(input_tensor)
 
-            if return_confidence:
-                result["confidence"] = prediction.conf[0].astype(np.float32)
+                # prediction keys: 'depth', 'depth_conf', 'extrinsics', 'intrinsics'
+                depth = prediction["depth"][0, 0].cpu().numpy()
+                result = {"depth": depth.astype(np.float32)}
 
-            if return_camera_params:
-                result["extrinsics"] = prediction.extrinsics[0].astype(np.float32)
-                result["intrinsics"] = prediction.intrinsics[0].astype(np.float32)
+                if return_confidence and "depth_conf" in prediction:
+                    result["confidence"] = prediction["depth_conf"][0, 0].cpu().numpy().astype(np.float32)
+
+                if return_camera_params:
+                    if "extrinsics" in prediction:
+                        result["extrinsics"] = prediction["extrinsics"][0, 0].cpu().numpy().astype(np.float32)
+                    if "intrinsics" in prediction:
+                        result["intrinsics"] = prediction["intrinsics"][0, 0].cpu().numpy().astype(np.float32)
+            else:
+                # DA3 API path (full installation with DepthAnything3.inference())
+                pil_image = Image.fromarray(image)
+
+                with torch.no_grad():
+                    prediction = self._model.inference([pil_image])
+
+                result = {"depth": prediction.depth[0].astype(np.float32)}
+
+                if return_confidence:
+                    result["confidence"] = prediction.conf[0].astype(np.float32)
+
+                if return_camera_params:
+                    result["extrinsics"] = prediction.extrinsics[0].astype(np.float32)
+                    result["intrinsics"] = prediction.intrinsics[0].astype(np.float32)
 
             return result
 
